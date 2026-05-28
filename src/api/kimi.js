@@ -12,7 +12,7 @@ const directBaseUrl =
   import.meta.env.VITE_OPENAI_BASE_URL ||
   'https://gateway.ai.cloudflare.com/v1/3d275686d20e190931adbada39b35957/soda/compat';
 
-export const KIMI_MODEL = 'workers-ai/@cf/moonshotai/kimi-k2.6';
+export const KIMI_MODEL = 'workers-ai/@cf/meta/llama-3.3-70b-instruct-fp8-fast';
 
 // Custom fetch that injects a fresh Turnstile token on every /api/* call.
 // Only used in proxy mode; dev mode calls the gateway directly with no token.

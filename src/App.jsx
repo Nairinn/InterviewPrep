@@ -10,7 +10,8 @@ import ChatSidebar from './components/ChatSidebar.jsx';
 import CheckpointDrawer from './components/CheckpointDrawer.jsx';
 import NewProblemModal from './components/NewProblemModal.jsx';
 import DebriefScreen from './components/DebriefScreen.jsx';
-import { generateProblem, MODES } from './api/generate.js';
+import { MODES } from './api/generate.js';
+import { fetchNextProblem, markProblemSolved } from './api/problems.js';
 import { usePyodide, parseUnittestOutput } from './hooks/usePyodide.js';
 
 const STAGES = {
@@ -33,6 +34,7 @@ export default function App() {
   // Active session
   const [modeId, setModeId] = useState(null);
   const [problem, setProblem] = useState(null); // { domain, files, test_file, checkpoints, bugs, stubs }
+  const [problemId, setProblemId] = useState(null);
   const [files, setFiles] = useState([]); // [{name, content}]
   const [activeFile, setActiveFile] = useState(null);
   const [originalContent, setOriginalContent] = useState({}); // baseline for dirty indicator
@@ -105,9 +107,16 @@ export default function App() {
   }, [allComplete, stage]);
 
   const finishSessionRef = useRef();
-  function finishSession(reason) {
+  async function finishSession(reason) {
     setStage(STAGES.DEBRIEF);
     setSessionReason(reason);
+    if (modeId && problemId) {
+      try {
+        await markProblemSolved(modeId, problemId);
+      } catch (err) {
+        console.warn('Failed to mark problem solved:', err);
+      }
+    }
   }
   const [sessionReason, setSessionReason] = useState('all_complete');
   finishSessionRef.current = finishSession;
@@ -121,7 +130,7 @@ export default function App() {
     setStage(STAGES.GENERATING);
     setGenError(null);
     try {
-      const data = await generateProblem(modeIdToUse, hint);
+      const { problem: data } = await fetchNextProblem(modeIdToUse, hint);
       hydrateProblem(modeIdToUse, data);
       setStage(STAGES.RUNNING);
     } catch (err) {
@@ -134,6 +143,7 @@ export default function App() {
   function hydrateProblem(modeIdToUse, data) {
     setModeId(modeIdToUse);
     setProblem(data);
+    setProblemId(data.id || null);
     setFiles(data.files.map((f) => ({ name: f.name, content: f.content })));
     setActiveFile(data.files[0]?.name || null);
     const baseline = {};
@@ -216,6 +226,7 @@ export default function App() {
   function handleRestart() {
     setStage(STAGES.START);
     setProblem(null);
+    setProblemId(null);
     setModeId(null);
     setFiles([]);
     setCheckpoints([]);

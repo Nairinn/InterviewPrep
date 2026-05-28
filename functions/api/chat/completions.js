@@ -18,7 +18,10 @@ const DEFAULT_BASE_URL =
 
 // AI Gateway /compat endpoint is multi-provider — the model must be prefixed
 // with the provider slug (workers-ai), then the Workers AI model id (@cf/...).
-const PINNED_MODEL = 'workers-ai/@cf/moonshotai/kimi-k2.6';
+// llama-3.3-70b is non-reasoning, instruction-tuned, and reliable at structured JSON output.
+// kimi-k2.6 was tried first but is a reasoning model with an 8192 output cap and burns
+// its budget on hidden thinking before producing the answer.
+const PINNED_MODEL = 'workers-ai/@cf/meta/llama-3.3-70b-instruct-fp8-fast';
 
 // Hard server-side limits
 const MAX_BODY_BYTES = 64 * 1024;     // 64 KB request body

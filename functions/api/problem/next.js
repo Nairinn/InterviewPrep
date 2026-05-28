@@ -13,7 +13,10 @@ import {
 // Problem generation runs on Cloudflare AI Gateway via user's configured model.
 const DEFAULT_BASE_URL =
   'https://gateway.ai.cloudflare.com/v1/3d275686d20e190931adbada39b35957/soda/compat';
-const PINNED_MODEL = 'workers-ai/@cf/moonshotai/kimi-k2.6';
+// llama-3.3-70b is non-reasoning and reliably produces structured JSON.
+// kimi-k2.6 was tried but is a reasoning model with an 8192 output cap and
+// burns its budget on hidden thinking before producing the answer.
+const PINNED_MODEL = 'workers-ai/@cf/meta/llama-3.3-70b-instruct-fp8-fast';
 const MAX_OUTPUT_TOKENS = 8192;
 
 const MODE_CONFIG = {
@@ -69,53 +72,67 @@ export async function onRequestGet({ request, env }) {
     const config = MODE_CONFIG[mode];
     const solved = await getUserSolved(userId, env);
     const origin = `${url.protocol}//${url.host}`;
+    const hasKvBinding = !!(env && env.PROBLEMS);
 
-    // Build the pool of available problems: seeds + KV entries
-    const available = [];
+    // Build full pool (seeds + KV) and split into unsolved + solved buckets
+    const allProblems = [];
 
-    // Add seeds
     const seedProblems = await fetchSeeds(mode, origin);
     for (const problem of seedProblems) {
-      if (!solved.has(`${mode}:${problem.id}`)) {
-        available.push({ source: 'seed', id: problem.id, data: problem });
-      }
+      allProblems.push({ source: 'seed', id: problem.id, data: problem });
     }
 
-    // Add KV problems
-    const kvIndex = await getProblemIndex(mode, env);
-    for (const problemId of kvIndex) {
-      if (!solved.has(`${mode}:${problemId}`)) {
+    let kvIndex = [];
+    if (hasKvBinding) {
+      kvIndex = await getProblemIndex(mode, env);
+      for (const problemId of kvIndex) {
         const data = await getProblem(mode, problemId, env);
-        if (data) {
-          available.push({ source: 'kv', id: problemId, data });
-        }
+        if (data) allProblems.push({ source: 'kv', id: problemId, data });
       }
     }
 
-    if (available.length > 0) {
-      const pick = available[Math.floor(Math.random() * available.length)];
+    const unsolved = allProblems.filter((p) => !solved.has(`${mode}:${p.id}`));
+
+    console.log(
+      `[problem/next] mode=${mode} user=${userId || '(none)'} kvBinding=${hasKvBinding} seedCount=${seedProblems.length} kvCount=${kvIndex.length} unsolved=${unsolved.length} total=${allProblems.length}`
+    );
+
+    // Happy path: serve an unsolved problem
+    if (unsolved.length > 0) {
+      const pick = unsolved[Math.floor(Math.random() * unsolved.length)];
       return json({ problem: pick.data, generated: false });
     }
 
-    // All problems solved — generate a new one
-    if (!env.OPENAI_API_KEY) {
-      return json({ error: 'No problems available and server cannot generate new ones (missing OPENAI_API_KEY)' }, 503);
+    // Bank exhausted — try to generate a fresh one
+    if (env.OPENAI_API_KEY) {
+      const hint = hintParam || DOMAIN_HINTS[Math.floor(Math.random() * DOMAIN_HINTS.length)];
+      const generated = await generateProblem(mode, hint, env);
+      if (generated) {
+        const problemId = generateProblemId();
+        generated.id = problemId;
+        if (hasKvBinding) {
+          try {
+            await saveProblem(mode, problemId, generated, env);
+          } catch (err) {
+            console.error('[problem/next] KV save error:', err.message || err);
+          }
+        }
+        return json({ problem: generated, generated: true });
+      }
+      console.warn('[problem/next] generation returned null — falling back to a repeat');
+    } else {
+      console.warn('[problem/next] OPENAI_API_KEY missing — cannot generate, falling back to a repeat');
     }
 
-    const hint = hintParam || DOMAIN_HINTS[Math.floor(Math.random() * DOMAIN_HINTS.length)];
-    const generated = await generateProblem(mode, hint, env);
-    if (!generated) {
-      return json({ error: 'Failed to generate a new problem' }, 502);
+    // Last resort: replay a random problem the user already solved.
+    // Much better UX than a hard 502 / 503.
+    if (allProblems.length > 0) {
+      const pick = allProblems[Math.floor(Math.random() * allProblems.length)];
+      return json({ problem: pick.data, generated: false, replay: true });
     }
 
-    const problemId = generateProblemId();
-    generated.id = problemId;
-    try {
-      await saveProblem(mode, problemId, generated, env);
-    } catch (err) {
-      console.error('KV save error:', err);
-    }
-    return json({ problem: generated, generated: true });
+    // Pool is completely empty (no seeds, no KV) — shouldn't happen in prod
+    return json({ error: 'No problems available' }, 503);
   } catch (err) {
     console.error('Unhandled error in /api/problem/next:', err);
     return json({ error: 'Internal server error', detail: err.message || String(err) }, 500);
@@ -166,21 +183,32 @@ async function generateProblem(mode, hint, env) {
   }
 
   if (!resp.ok) {
-    console.error('Upstream generation non-ok status:', resp.status);
+    const errBody = await resp.text().catch(() => '');
+    console.error(`[generateProblem] upstream ${resp.status}:`, errBody.slice(0, 500));
     return null;
   }
 
   let upstreamBody;
   try {
     upstreamBody = await resp.json();
-  } catch {
+  } catch (err) {
+    console.error('[generateProblem] could not parse upstream JSON:', err.message);
     return null;
   }
 
+  const finishReason = upstreamBody.choices?.[0]?.finish_reason;
   const content = upstreamBody.choices?.[0]?.message?.content || '';
-  if (!content) return null;
+  console.log(`[generateProblem] finish_reason=${finishReason} content_len=${content.length}`);
+  if (!content) {
+    console.error('[generateProblem] empty content. Message keys:', Object.keys(upstreamBody.choices?.[0]?.message || {}));
+    return null;
+  }
 
-  return extractJSON(content);
+  const parsed = extractJSON(content);
+  if (!parsed) {
+    console.error('[generateProblem] JSON parse failed. First 300 chars of content:', content.slice(0, 300));
+  }
+  return parsed;
 }
 
 function extractJSON(text) {

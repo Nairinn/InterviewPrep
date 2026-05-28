@@ -8,7 +8,7 @@
     "build": "vite build",
     "preview": "vite preview",
     "pages:dev": "wrangler pages dev --proxy 5173 -- npm run dev",
-    "deploy": "vite build && wrangler pages deploy dist --project-name interviewpad"
+    "deploy": "vite build && wrangler pages deploy dist --project-name interviewprep-3cm"
   },
   "dependencies": {
     "@codemirror/lang-python": "^6.1.6",

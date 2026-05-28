@@ -16,7 +16,9 @@
 const DEFAULT_BASE_URL =
   'https://gateway.ai.cloudflare.com/v1/3d275686d20e190931adbada39b35957/soda/compat';
 
-const PINNED_MODEL = '@cf/moonshotai/kimi-k2.6';
+// AI Gateway /compat endpoint is multi-provider — the model must be prefixed
+// with the provider slug (workers-ai), then the Workers AI model id (@cf/...).
+const PINNED_MODEL = 'workers-ai/@cf/moonshotai/kimi-k2.6';
 
 // Hard server-side limits
 const MAX_BODY_BYTES = 64 * 1024;     // 64 KB request body

@@ -39,64 +39,68 @@ const DOMAIN_HINTS = [
 ];
 
 export async function onRequestGet({ request, env }) {
-  const url = new URL(request.url);
-  const mode = url.searchParams.get('mode');
-  const userId = url.searchParams.get('user');
-  const hintParam = url.searchParams.get('hint');
+  try {
+    const url = new URL(request.url);
+    const mode = url.searchParams.get('mode');
+    const userId = url.searchParams.get('user');
+    const hintParam = url.searchParams.get('hint');
 
-  if (!mode || !MODE_CONFIG[mode]) {
-    return json({ error: 'Invalid or missing mode' }, 400);
-  }
-
-  const config = MODE_CONFIG[mode];
-  const solved = await getUserSolved(userId, env);
-
-  // Build the pool of available problems: seeds + KV entries
-  const available = [];
-
-  // Add seeds
-  for (const problem of config.seedArray || []) {
-    if (!solved.has(`${mode}:${problem.id}`)) {
-      available.push({ source: 'seed', id: problem.id, data: problem });
+    if (!mode || !MODE_CONFIG[mode]) {
+      return json({ error: 'Invalid or missing mode' }, 400);
     }
-  }
 
-  // Add KV problems
-  const kvIndex = await getProblemIndex(mode, env);
-  for (const problemId of kvIndex) {
-    if (!solved.has(`${mode}:${problemId}`)) {
-      const data = await getProblem(mode, problemId, env);
-      if (data) {
-        available.push({ source: 'kv', id: problemId, data });
+    const config = MODE_CONFIG[mode];
+    const solved = await getUserSolved(userId, env);
+
+    // Build the pool of available problems: seeds + KV entries
+    const available = [];
+
+    // Add seeds
+    for (const problem of config.seedArray || []) {
+      if (!solved.has(`${mode}:${problem.id}`)) {
+        available.push({ source: 'seed', id: problem.id, data: problem });
       }
     }
-  }
 
-  if (available.length > 0) {
-    const pick = available[Math.floor(Math.random() * available.length)];
-    return json({ problem: pick.data, generated: false });
-  }
+    // Add KV problems
+    const kvIndex = await getProblemIndex(mode, env);
+    for (const problemId of kvIndex) {
+      if (!solved.has(`${mode}:${problemId}`)) {
+        const data = await getProblem(mode, problemId, env);
+        if (data) {
+          available.push({ source: 'kv', id: problemId, data });
+        }
+      }
+    }
 
-  // All problems solved — generate a new one
-  if (!env.OPENAI_API_KEY) {
-    return json({ error: 'No problems available and server cannot generate new ones (missing OPENAI_API_KEY)' }, 503);
-  }
+    if (available.length > 0) {
+      const pick = available[Math.floor(Math.random() * available.length)];
+      return json({ problem: pick.data, generated: false });
+    }
 
-  const hint = hintParam || DOMAIN_HINTS[Math.floor(Math.random() * DOMAIN_HINTS.length)];
-  const generated = await generateProblem(mode, hint, env);
-  if (!generated) {
-    return json({ error: 'Failed to generate a new problem' }, 502);
-  }
+    // All problems solved — generate a new one
+    if (!env.OPENAI_API_KEY) {
+      return json({ error: 'No problems available and server cannot generate new ones (missing OPENAI_API_KEY)' }, 503);
+    }
 
-  const problemId = generateProblemId();
-  generated.id = problemId;
-  try {
-    await saveProblem(mode, problemId, generated, env);
+    const hint = hintParam || DOMAIN_HINTS[Math.floor(Math.random() * DOMAIN_HINTS.length)];
+    const generated = await generateProblem(mode, hint, env);
+    if (!generated) {
+      return json({ error: 'Failed to generate a new problem' }, 502);
+    }
+
+    const problemId = generateProblemId();
+    generated.id = problemId;
+    try {
+      await saveProblem(mode, problemId, generated, env);
+    } catch (err) {
+      console.error('KV save error:', err);
+    }
+    return json({ problem: generated, generated: true });
   } catch (err) {
-    // Non-fatal: we can still return the generated problem even if KV save fails
-    console.error('KV save error:', err);
+    console.error('Unhandled error in /api/problem/next:', err);
+    return json({ error: 'Internal server error', detail: err.message || String(err) }, 500);
   }
-  return json({ problem: generated, generated: true });
 }
 
 export async function onRequest({ request }) {

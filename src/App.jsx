@@ -1,0 +1,393 @@
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import StartScreen from './components/StartScreen.jsx';
+import ConfirmScreen from './components/ConfirmScreen.jsx';
+import LoadingScreen from './components/LoadingScreen.jsx';
+import Navbar from './components/Navbar.jsx';
+import FileExplorer from './components/FileExplorer.jsx';
+import CodeEditor from './components/CodeEditor.jsx';
+import Terminal from './components/Terminal.jsx';
+import ChatSidebar from './components/ChatSidebar.jsx';
+import CheckpointDrawer from './components/CheckpointDrawer.jsx';
+import NewProblemModal from './components/NewProblemModal.jsx';
+import DebriefScreen from './components/DebriefScreen.jsx';
+import { generateProblem, MODES } from './api/generate.js';
+import { usePyodide, parseUnittestOutput } from './hooks/usePyodide.js';
+
+const STAGES = {
+  START: 'start',
+  CONFIRM: 'confirm',
+  GENERATING: 'generating',
+  GEN_ERROR: 'gen_error',
+  RUNNING: 'running',
+  DEBRIEF: 'debrief',
+};
+
+const SESSION_SECONDS = 60 * 60; // 60 minutes
+
+export default function App() {
+  const [stage, setStage] = useState(STAGES.START);
+  const [pendingModeId, setPendingModeId] = useState(null);
+  const [pendingHint, setPendingHint] = useState('');
+  const [genError, setGenError] = useState(null);
+
+  // Active session
+  const [modeId, setModeId] = useState(null);
+  const [problem, setProblem] = useState(null); // { domain, files, test_file, checkpoints, bugs, stubs }
+  const [files, setFiles] = useState([]); // [{name, content}]
+  const [activeFile, setActiveFile] = useState(null);
+  const [originalContent, setOriginalContent] = useState({}); // baseline for dirty indicator
+
+  // Checkpoints
+  const [checkpoints, setCheckpoints] = useState([]); // [{id, title, ai_enabled, task, complete}]
+  const [currentCheckpointIdx, setCurrentCheckpointIdx] = useState(0);
+  const [checkpointStartTime, setCheckpointStartTime] = useState(0);
+  const [checkpointTimes, setCheckpointTimes] = useState({}); // id -> seconds
+
+  // Timer
+  const [sessionRemaining, setSessionRemaining] = useState(SESSION_SECONDS);
+  const [checkpointElapsed, setCheckpointElapsed] = useState(0);
+
+  // Tests / terminal
+  const [terminalCollapsed, setTerminalCollapsed] = useState(false);
+  const [testResult, setTestResult] = useState(null);
+  const [testError, setTestError] = useState(null);
+  const [runningTests, setRunningTests] = useState(false);
+
+  // Chat
+  const [messages, setMessages] = useState([]);
+
+  // Modal
+  const [newProblemOpen, setNewProblemOpen] = useState(false);
+
+  // Pyodide
+  const { status: pyodideStatus, error: pyodideError, runTests } = usePyodide();
+
+  // Timers — single interval drives both session countdown + checkpoint counter
+  useEffect(() => {
+    if (stage !== STAGES.RUNNING) return;
+    const interval = setInterval(() => {
+      setSessionRemaining((s) => {
+        if (s <= 1) {
+          // Time's up
+          finishSession('time_up');
+          return 0;
+        }
+        return s - 1;
+      });
+      setCheckpointElapsed((e) => e + 1);
+    }, 1000);
+    return () => clearInterval(interval);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [stage]);
+
+  // Dirty file detection
+  const dirtyFiles = useMemo(() => {
+    const set = new Set();
+    for (const f of files) {
+      if (originalContent[f.name] !== undefined && originalContent[f.name] !== f.content) {
+        set.add(f.name);
+      }
+    }
+    return set;
+  }, [files, originalContent]);
+
+  const activeFileObj = files.find((f) => f.name === activeFile);
+  const currentCheckpoint = checkpoints[currentCheckpointIdx];
+  const aiEnabled = !!currentCheckpoint?.ai_enabled;
+  const allComplete = checkpoints.length > 0 && checkpoints.every((c) => c.complete);
+
+  // Auto-finish when all checkpoints complete
+  useEffect(() => {
+    if (stage === STAGES.RUNNING && allComplete) {
+      finishSession('all_complete');
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [allComplete, stage]);
+
+  const finishSessionRef = useRef();
+  function finishSession(reason) {
+    setStage(STAGES.DEBRIEF);
+    setSessionReason(reason);
+  }
+  const [sessionReason, setSessionReason] = useState('all_complete');
+  finishSessionRef.current = finishSession;
+
+  function handlePickMode(mid) {
+    setPendingModeId(mid);
+    setStage(STAGES.CONFIRM);
+  }
+
+  async function startGeneration(modeIdToUse, hint) {
+    setStage(STAGES.GENERATING);
+    setGenError(null);
+    try {
+      const data = await generateProblem(modeIdToUse, hint);
+      hydrateProblem(modeIdToUse, data);
+      setStage(STAGES.RUNNING);
+    } catch (err) {
+      console.error(err);
+      setGenError(err.message || String(err));
+      setStage(STAGES.GEN_ERROR);
+    }
+  }
+
+  function hydrateProblem(modeIdToUse, data) {
+    setModeId(modeIdToUse);
+    setProblem(data);
+    setFiles(data.files.map((f) => ({ name: f.name, content: f.content })));
+    setActiveFile(data.files[0]?.name || null);
+    const baseline = {};
+    for (const f of data.files) baseline[f.name] = f.content;
+    setOriginalContent(baseline);
+    setCheckpoints(
+      data.checkpoints.map((cp) => ({
+        id: cp.id,
+        title: cp.title,
+        ai_enabled: cp.ai_enabled,
+        task: cp.task,
+        complete: false,
+      }))
+    );
+    setCurrentCheckpointIdx(0);
+    setCheckpointStartTime(Date.now());
+    setCheckpointTimes({});
+    setCheckpointElapsed(0);
+    setSessionRemaining(SESSION_SECONDS);
+    setTestResult(null);
+    setTestError(null);
+    setMessages([]);
+    setTerminalCollapsed(false);
+  }
+
+  function handleConfirm(hint) {
+    setPendingHint(hint);
+    startGeneration(pendingModeId, hint);
+  }
+
+  function handleEditorChange(fileName, content) {
+    setFiles((prev) => prev.map((f) => (f.name === fileName ? { ...f, content } : f)));
+  }
+
+  function handleMarkComplete() {
+    if (!currentCheckpoint) return;
+    const elapsedNow = checkpointElapsed;
+    setCheckpointTimes((m) => ({ ...m, [currentCheckpoint.id]: elapsedNow }));
+    setCheckpoints((prev) =>
+      prev.map((cp, idx) => (idx === currentCheckpointIdx ? { ...cp, complete: true } : cp))
+    );
+    if (currentCheckpointIdx < checkpoints.length - 1) {
+      setCurrentCheckpointIdx(currentCheckpointIdx + 1);
+      setCheckpointElapsed(0);
+    }
+  }
+
+  const handleRunTests = useCallback(async () => {
+    if (!problem || pyodideStatus !== 'ready' || runningTests) return;
+    setRunningTests(true);
+    setTestError(null);
+    setTerminalCollapsed(false);
+    try {
+      const fileMap = {};
+      for (const f of files) fileMap[f.name] = f.content;
+      const { stdout, stderr } = await runTests(fileMap, problem.test_file);
+      const parsed = parseUnittestOutput(stderr);
+      // If stderr has a traceback unrelated to tests (e.g., import error), surface it
+      if (parsed.tests.length === 0 && /Traceback|SyntaxError|ImportError|ModuleNotFoundError/.test(stderr)) {
+        setTestError(stderr);
+      }
+      setTestResult({ ...parsed, stdout, rawStderr: stderr });
+    } catch (err) {
+      setTestError(err.message || String(err));
+    } finally {
+      setRunningTests(false);
+    }
+  }, [problem, pyodideStatus, runningTests, files, runTests]);
+
+  function handleClearTerminal() {
+    setTestResult(null);
+    setTestError(null);
+  }
+
+  function handleNewProblem(newModeId, hint) {
+    setNewProblemOpen(false);
+    startGeneration(newModeId, hint);
+  }
+
+  function handleRestart() {
+    setStage(STAGES.START);
+    setProblem(null);
+    setModeId(null);
+    setFiles([]);
+    setCheckpoints([]);
+    setMessages([]);
+    setTestResult(null);
+    setTestError(null);
+  }
+
+  // ---------- Render by stage ----------
+
+  // Pyodide initial load gate
+  if (pyodideStatus === 'loading' && stage === STAGES.START) {
+    // Allow Start screen anyway; Pyodide loads in background. But show a banner if needed.
+  }
+
+  if (stage === STAGES.START) {
+    return (
+      <div className="h-full w-full flex flex-col">
+        <StartScreen onPick={handlePickMode} />
+        <PyodideStatusBanner status={pyodideStatus} error={pyodideError} />
+      </div>
+    );
+  }
+
+  if (stage === STAGES.CONFIRM) {
+    return (
+      <div className="h-full w-full flex flex-col">
+        <ConfirmScreen
+          modeId={pendingModeId}
+          onConfirm={handleConfirm}
+          onBack={() => setStage(STAGES.START)}
+        />
+        <PyodideStatusBanner status={pyodideStatus} error={pyodideError} />
+      </div>
+    );
+  }
+
+  if (stage === STAGES.GENERATING) {
+    return <LoadingScreen message="Generating your codebase..." />;
+  }
+
+  if (stage === STAGES.GEN_ERROR) {
+    return (
+      <LoadingScreen
+        error={genError}
+        onRetry={() => startGeneration(pendingModeId, pendingHint)}
+        onBack={() => setStage(STAGES.START)}
+      />
+    );
+  }
+
+  if (stage === STAGES.DEBRIEF) {
+    return (
+      <DebriefScreen
+        session={{
+          modeId,
+          domain: problem?.domain || '',
+          checkpoints,
+          checkpointTimes,
+          totalElapsed: SESSION_SECONDS - sessionRemaining,
+          messages,
+          reason: sessionReason,
+        }}
+        onRestart={handleRestart}
+      />
+    );
+  }
+
+  // RUNNING
+  return (
+    <div className="h-full w-full flex flex-col bg-bg-900">
+      <Navbar
+        modeId={modeId}
+        sessionSeconds={sessionRemaining}
+        checkpoints={checkpoints}
+        currentCheckpointIdx={currentCheckpointIdx}
+        onRunTests={handleRunTests}
+        onNewProblem={() => setNewProblemOpen(true)}
+        runningTests={runningTests}
+        pyodideReady={pyodideStatus === 'ready'}
+      />
+
+      <CheckpointDrawer
+        checkpoint={currentCheckpoint}
+        accent={MODES[modeId].accent}
+        elapsed={checkpointElapsed}
+        onComplete={handleMarkComplete}
+        allComplete={allComplete}
+      />
+
+      <div className="flex-1 flex min-h-0">
+        <div style={{ width: 240 }} className="flex-shrink-0">
+          <FileExplorer
+            files={files}
+            activeFile={activeFile}
+            onPick={setActiveFile}
+            dirtyFiles={dirtyFiles}
+            domain={problem?.domain}
+          />
+        </div>
+
+        <div className="flex-1 flex flex-col min-w-0">
+          <div className="flex-1 min-h-0">
+            <CodeEditor
+              files={files}
+              activeFile={activeFile}
+              onChange={handleEditorChange}
+              onTabPick={setActiveFile}
+              dirtyFiles={dirtyFiles}
+            />
+          </div>
+          <Terminal
+            result={testResult}
+            collapsed={terminalCollapsed}
+            onToggle={() => setTerminalCollapsed(!terminalCollapsed)}
+            onClear={handleClearTerminal}
+            running={runningTests}
+            error={testError}
+          />
+        </div>
+
+        <div style={{ width: 320 }} className="flex-shrink-0">
+          <ChatSidebar
+            enabled={aiEnabled}
+            modeId={modeId}
+            accent={MODES[modeId].accent}
+            activeFileName={activeFile}
+            activeFileContent={activeFileObj?.content || ''}
+            messages={messages}
+            setMessages={setMessages}
+          />
+        </div>
+      </div>
+
+      {pyodideStatus !== 'ready' && (
+        <div className="absolute bottom-3 left-3 bg-bg-800 border border-bg-600 rounded px-3 py-2 text-xs text-gray-300 flex items-center gap-2 shadow-lg">
+          {pyodideStatus === 'loading' && (
+            <>
+              <span className="spinner w-3 h-3" />
+              Loading Python runtime...
+            </>
+          )}
+          {pyodideStatus === 'error' && (
+            <span className="text-red-400">Python runtime failed: {pyodideError}</span>
+          )}
+        </div>
+      )}
+
+      {newProblemOpen && (
+        <NewProblemModal
+          currentModeId={modeId}
+          onClose={() => setNewProblemOpen(false)}
+          onRegenerate={handleNewProblem}
+        />
+      )}
+    </div>
+  );
+}
+
+function PyodideStatusBanner({ status, error }) {
+  if (status === 'ready') return null;
+  return (
+    <div className="absolute bottom-3 left-3 bg-bg-800 border border-bg-600 rounded px-3 py-2 text-xs text-gray-300 flex items-center gap-2 shadow-lg">
+      {status === 'loading' && (
+        <>
+          <span className="spinner w-3 h-3" />
+          Loading Python runtime in background...
+        </>
+      )}
+      {status === 'error' && (
+        <span className="text-red-400">Python runtime failed: {error}</span>
+      )}
+    </div>
+  );
+}

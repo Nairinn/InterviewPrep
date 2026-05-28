@@ -99,15 +99,66 @@ export const MODES = {
 };
 
 function extractJSON(text) {
-  // Try to strip markdown fences if any leaked in
   let cleaned = text.trim();
+  // Strip markdown fences
   cleaned = cleaned.replace(/^```(?:json)?\s*/i, '').replace(/```\s*$/i, '');
+  // Slice from first { to last }
   const firstBrace = cleaned.indexOf('{');
   const lastBrace = cleaned.lastIndexOf('}');
   if (firstBrace >= 0 && lastBrace > firstBrace) {
     cleaned = cleaned.slice(firstBrace, lastBrace + 1);
   }
-  return JSON.parse(cleaned);
+  // Try strict parse first
+  try {
+    return JSON.parse(cleaned);
+  } catch (_) {}
+  // Fallback 1: model truncated mid-output — try to find the last complete object
+  // by walking back from the end and balancing braces.
+  const balanced = balanceBraces(cleaned);
+  if (balanced) {
+    try {
+      return JSON.parse(balanced);
+    } catch (_) {}
+  }
+  // Fallback 2: Python-style booleans/None leaked in
+  const pyFixed = cleaned
+    .replace(/\bTrue\b/g, 'true')
+    .replace(/\bFalse\b/g, 'false')
+    .replace(/\bNone\b/g, 'null');
+  try {
+    return JSON.parse(pyFixed);
+  } catch (_) {}
+  throw new Error('Could not parse model output as JSON');
+}
+
+function balanceBraces(s) {
+  let depth = 0;
+  let inString = false;
+  let escape = false;
+  let lastValidEnd = -1;
+  for (let i = 0; i < s.length; i++) {
+    const c = s[i];
+    if (escape) {
+      escape = false;
+      continue;
+    }
+    if (c === '\\') {
+      escape = true;
+      continue;
+    }
+    if (c === '"') {
+      inString = !inString;
+      continue;
+    }
+    if (inString) continue;
+    if (c === '{') depth++;
+    else if (c === '}') {
+      depth--;
+      if (depth === 0) lastValidEnd = i;
+    }
+  }
+  if (lastValidEnd > 0) return s.slice(0, lastValidEnd + 1);
+  return null;
 }
 
 export async function generateProblem(modeId, hint) {
@@ -116,16 +167,21 @@ export async function generateProblem(modeId, hint) {
   const prompt = mode.prompt(hint);
   const raw = await chat(
     [
-      { role: 'system', content: 'You generate strictly valid JSON for a coding interview simulator. Never wrap output in markdown.' },
+      { role: 'system', content: 'You generate strictly valid JSON for a coding interview simulator. Output ONLY a single JSON object — no markdown fences, no preamble, no explanation, no text after the closing brace. Use double-quoted strings, true/false/null. Escape newlines inside string values as \\n.' },
       { role: 'user', content: prompt },
     ],
-    { temperature: 0.7 }
+    { temperature: 0.6, max_tokens: 8192, response_format: { type: 'json_object' } }
   );
   let parsed;
   try {
     parsed = extractJSON(raw);
   } catch (err) {
-    const e = new Error('Failed to parse JSON from model response.');
+    // Surface the first chunk of raw output so the user can see what came back
+    console.error('Raw model response:', raw);
+    const snippet = (raw || '').slice(0, 400).replace(/\s+/g, ' ');
+    const e = new Error(
+      `Failed to parse JSON from model response. First 400 chars: ${snippet || '(empty response)'}`
+    );
     e.raw = raw;
     e.cause = err;
     throw e;

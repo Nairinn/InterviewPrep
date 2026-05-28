@@ -22,13 +22,13 @@ const PINNED_MODEL = 'workers-ai/@cf/moonshotai/kimi-k2.6';
 
 // Hard server-side limits
 const MAX_BODY_BYTES = 64 * 1024;     // 64 KB request body
-const MAX_OUTPUT_TOKENS = 4096;        // cap completion length (codebase generation needs ~3-4k)
+const MAX_OUTPUT_TOKENS = 8192;        // cap completion length (codebase generation needs ~6-8k)
 const MAX_MESSAGES = 40;               // cap chat history length
 const MAX_MESSAGE_CHARS = 30000;       // cap per-message size (full file context can be ~10-20k)
 const MAX_TEMPERATURE = 1.0;
 
 // Only these fields from the incoming body are forwarded upstream
-const ALLOWED_FIELDS = new Set(['messages', 'temperature', 'top_p', 'stream', 'max_tokens']);
+const ALLOWED_FIELDS = new Set(['messages', 'temperature', 'top_p', 'stream', 'max_tokens', 'response_format']);
 
 export async function onRequestPost({ request, env }) {
   if (!env.OPENAI_API_KEY) {
@@ -127,6 +127,10 @@ export async function onRequestPost({ request, env }) {
     safe.max_tokens = Math.min(Math.max(Math.floor(parsed.max_tokens), 1), MAX_OUTPUT_TOKENS);
   } else {
     safe.max_tokens = MAX_OUTPUT_TOKENS;
+  }
+  // Pass through response_format (e.g. {type:"json_object"}) if provided.
+  if (parsed.response_format && typeof parsed.response_format === 'object') {
+    safe.response_format = parsed.response_format;
   }
   // Force streaming off so we can fully control response size
   safe.stream = false;

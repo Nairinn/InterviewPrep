@@ -99,6 +99,33 @@ export async function markProblemSolved(mode, problemId, meta = {}) {
   }
 }
 
+export async function fetchProblemById(mode, problemId) {
+  // Try the API first
+  try {
+    const resp = await fetch(
+      `/api/problem/by-id?mode=${encodeURIComponent(mode)}&id=${encodeURIComponent(problemId)}`,
+      { method: 'GET' }
+    );
+    if (resp.ok) {
+      const data = await resp.json();
+      if (data.problem) return data.problem;
+    }
+  } catch (err) {
+    console.warn('by-id API unavailable, falling back to seed JSON:', err.message);
+  }
+  // Fallback: look in the seed JSON directly (only works for seed-id problems, not gen:)
+  try {
+    const resp = await fetch(`/seed/${mode}.json`);
+    if (!resp.ok) throw new Error('seed file not available');
+    const seeds = await resp.json();
+    const match = seeds.find((p) => p.id === problemId);
+    if (match) return match;
+    throw new Error('problem not found in seed bank');
+  } catch (err) {
+    throw new Error(`Could not load problem ${problemId}: ${err.message}`);
+  }
+}
+
 export async function fetchHistory() {
   const user = getUserId();
 

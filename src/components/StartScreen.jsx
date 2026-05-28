@@ -35,9 +35,6 @@ export default function StartScreen({ onPick }) {
           })}
         </div>
 
-        <div className="text-center mt-10 text-xs text-gray-500">
-          Tip: set <code className="text-gray-400">VITE_OPENAI_API_KEY</code> in <code className="text-gray-400">.env</code> before starting.
-        </div>
       </div>
     </div>
   );

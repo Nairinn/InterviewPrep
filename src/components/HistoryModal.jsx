@@ -3,7 +3,7 @@ import { fetchHistory } from '../api/problems.js';
 import { MODES } from '../api/generate.js';
 import { accentClasses, formatTime } from '../utils/format.js';
 
-export default function HistoryModal({ onClose }) {
+export default function HistoryModal({ onClose, onReplay }) {
   const [history, setHistory] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -70,25 +70,40 @@ export default function HistoryModal({ onClose }) {
                     {mode.label} ({entries.length})
                   </div>
                   <div className="space-y-2">
-                    {entries.map((entry, idx) => (
-                      <div key={idx} className="bg-bg-900 border border-bg-600 rounded-lg p-3">
-                        <div className="flex items-center justify-between mb-1">
-                          <div className="text-sm font-medium text-gray-200">
-                            {entry.domain || 'Untitled'}
+                    {entries.map((entry, idx) => {
+                      const canReplay = !!entry.problemId && !!onReplay;
+                      const Wrapper = canReplay ? 'button' : 'div';
+                      return (
+                        <Wrapper
+                          key={idx}
+                          onClick={canReplay ? () => onReplay(entry.mode, entry.problemId) : undefined}
+                          className={`w-full text-left bg-bg-900 border border-bg-600 rounded-lg p-3 transition-colors ${
+                            canReplay ? `hover:${a.border} hover:bg-bg-700 cursor-pointer` : ''
+                          }`}
+                        >
+                          <div className="flex items-center justify-between mb-1">
+                            <div className="text-sm font-medium text-gray-200">
+                              {entry.domain || 'Untitled'}
+                            </div>
+                            <div className="flex items-center gap-2">
+                              <div className="text-[10px] text-gray-500 font-mono">
+                                {entry.generated ? 'AI-generated' : 'Seed'}
+                              </div>
+                              {canReplay && (
+                                <div className={`text-[10px] ${a.text} font-medium`}>↻ Replay</div>
+                              )}
+                            </div>
                           </div>
-                          <div className="text-[10px] text-gray-500 font-mono">
-                            {entry.generated ? 'AI-generated' : 'Seed'}
+                          <div className="flex items-center gap-3 text-xs text-gray-400">
+                            <span>Total: <span className="text-gray-300 font-mono">{formatTime(entry.totalTime || 0)}</span></span>
+                            <span>·</span>
+                            <span>{Object.keys(entry.checkpointTimes || {}).length} checkpoints</span>
+                            <span>·</span>
+                            <span>{new Date(entry.completedAt).toLocaleDateString()}</span>
                           </div>
-                        </div>
-                        <div className="flex items-center gap-3 text-xs text-gray-400">
-                          <span>Total: <span className="text-gray-300 font-mono">{formatTime(entry.totalTime || 0)}</span></span>
-                          <span>·</span>
-                          <span>{Object.keys(entry.checkpointTimes || {}).length} checkpoints</span>
-                          <span>·</span>
-                          <span>{new Date(entry.completedAt).toLocaleDateString()}</span>
-                        </div>
-                      </div>
-                    ))}
+                        </Wrapper>
+                      );
+                    })}
                   </div>
                 </div>
               );

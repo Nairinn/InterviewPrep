@@ -12,7 +12,7 @@ import NewProblemModal from './components/NewProblemModal.jsx';
 import HistoryModal from './components/HistoryModal.jsx';
 import DebriefScreen from './components/DebriefScreen.jsx';
 import { MODES } from './api/generate.js';
-import { fetchNextProblem, markProblemSolved } from './api/problems.js';
+import { fetchNextProblem, fetchProblemById, markProblemSolved } from './api/problems.js';
 import { usePyodide, parseUnittestOutput } from './hooks/usePyodide.js';
 
 const STAGES = {
@@ -141,6 +141,22 @@ export default function App() {
     try {
       const { problem: data, generated } = await fetchNextProblem(modeIdToUse, hint);
       hydrateProblem(modeIdToUse, data, generated);
+      setStage(STAGES.RUNNING);
+    } catch (err) {
+      console.error(err);
+      setGenError(err.message || String(err));
+      setStage(STAGES.GEN_ERROR);
+    }
+  }
+
+  async function replayProblem(modeIdToUse, problemIdToReplay) {
+    setHistoryOpen(false);
+    setNewProblemOpen(false);
+    setStage(STAGES.GENERATING);
+    setGenError(null);
+    try {
+      const data = await fetchProblemById(modeIdToUse, problemIdToReplay);
+      hydrateProblem(modeIdToUse, data, false);
       setStage(STAGES.RUNNING);
     } catch (err) {
       console.error(err);
@@ -396,7 +412,7 @@ export default function App() {
       )}
 
       {historyOpen && (
-        <HistoryModal onClose={() => setHistoryOpen(false)} />
+        <HistoryModal onClose={() => setHistoryOpen(false)} onReplay={replayProblem} />
       )}
     </div>
   );

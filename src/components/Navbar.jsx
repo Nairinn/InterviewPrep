@@ -56,7 +56,7 @@ export default function Navbar({
         Python ▾
       </div>
 
-      <div className="text-xs text-gray-500 font-mono">moonshot-v1-8k</div>
+      <div className="text-xs text-gray-500 font-mono">kimi-k2.6</div>
 
       <div className={`font-mono text-sm tabular-nums ${lowTime ? 'text-red-400' : 'text-gray-200'}`}>
         {formatTime(sessionSeconds)}

@@ -12,7 +12,7 @@ export default function StartScreen({ onPick }) {
             AI-assisted coding interview practice — Meta / Notion / Google format
           </p>
           <p className="text-xs text-gray-500 mt-3 font-mono">
-            60 min · 4 checkpoints · Python · chat: moonshot-v1-8k · generation: llama-3.3-70b
+            60 min · 4 checkpoints · Python · chat: kimi-k2.6 · generation: llama-3.3-70b
           </p>
         </div>
 

@@ -75,7 +75,7 @@ export default function ChatSidebar({ enabled, modeId, accent, activeFileName, a
       <div className="px-3 py-2 border-b border-bg-600 flex items-center flex-shrink-0">
         <div className="text-[10px] uppercase tracking-widest text-gray-500 font-semibold">AI Assistant</div>
         <div className="flex-1" />
-        <div className="text-[10px] text-gray-500 font-mono">moonshot-v1-8k</div>
+        <div className="text-[10px] text-gray-500 font-mono">kimi-k2.6</div>
       </div>
 
       <div ref={scrollRef} className="flex-1 overflow-y-auto p-3 space-y-3 text-sm">

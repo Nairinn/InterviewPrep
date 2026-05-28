@@ -2,21 +2,21 @@ import OpenAI from 'openai';
 import { getTurnstileToken, isTurnstileConfigured } from '../utils/turnstile.js';
 
 // In production the browser calls our same-origin Pages Function at /api,
-// which forwards to the Moonshot API with the secret key.
-// In local dev (npm run dev), set VITE_MOONSHOT_API_KEY in .env and the SDK
-// will call Moonshot directly — convenient but the key ends up in the
+// which forwards to the Cloudflare AI Gateway with the secret key.
+// In local dev (npm run dev), set VITE_OPENAI_API_KEY in .env and the SDK
+// will call the gateway directly — convenient but the key ends up in the
 // bundle, so never `vite build` with that key set.
 
-const directApiKey = import.meta.env.VITE_MOONSHOT_API_KEY || import.meta.env.VITE_OPENAI_API_KEY;
+const directApiKey = import.meta.env.VITE_OPENAI_API_KEY;
 const directBaseUrl =
-  import.meta.env.VITE_MOONSHOT_BASE_URL ||
   import.meta.env.VITE_OPENAI_BASE_URL ||
-  'https://api.moonshot.cn/v1';
+  'https://gateway.ai.cloudflare.com/v1/3d275686d20e190931adbada39b35957/soda/compat';
 
-export const CHAT_MODEL = 'moonshot-v1-8k';
+// Chat uses the Kimi model via Cloudflare AI Gateway.
+export const CHAT_MODEL = 'workers-ai/@cf/moonshotai/kimi-k2.6';
 
 // Custom fetch that injects a fresh Turnstile token on every /api/* call.
-// Only used in proxy mode; dev mode calls Moonshot directly with no token.
+// Only used in proxy mode; dev mode calls the gateway directly with no token.
 async function fetchWithTurnstile(url, init = {}) {
   if (!isTurnstileConfigured) return fetch(url, init);
   const token = await getTurnstileToken();
@@ -27,7 +27,7 @@ async function fetchWithTurnstile(url, init = {}) {
 
 export function getClient() {
   if (directApiKey) {
-    // Dev mode: call Moonshot directly from the browser.
+    // Dev mode: call the gateway directly from the browser.
     return new OpenAI({
       apiKey: directApiKey,
       baseURL: directBaseUrl,

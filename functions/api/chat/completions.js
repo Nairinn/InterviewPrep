@@ -1,19 +1,22 @@
 // Cloudflare Pages Function — POST /api/chat/completions
-// Same-origin proxy to the Moonshot API. Holds the API key as a server-side secret,
+// Same-origin proxy to the Cloudflare AI Gateway. Holds the API key as a server-side secret,
 // pins the model, caps token usage, and validates the request body so a malicious
 // caller can't drain the key by switching models or asking for huge completions.
 //
 // Required env vars (Cloudflare dashboard or `wrangler pages secret put`):
-//   MOONSHOT_API_KEY   — Moonshot API key (preferred)
-//   OPENAI_API_KEY     — fallback if MOONSHOT_API_KEY is not set
-//   MOONSHOT_BASE_URL  — optional override, default: https://api.moonshot.cn/v1
+//   OPENAI_API_KEY     — Cloudflare API token with Workers AI scope
+//   OPENAI_BASE_URL    — optional override (default is the AI Gateway compat endpoint)
 //   ALLOWED_ORIGIN     — optional, e.g. "https://interviewpad.pages.dev"
 //                         when set, requests from other Origins are rejected
 //   TURNSTILE_SECRET   — optional. When set, every request must carry a valid
 //                         cf-turnstile-token header (verified with Cloudflare).
 
-const DEFAULT_BASE_URL = 'https://api.moonshot.cn/v1';
-const PINNED_MODEL = 'moonshot-v1-8k';
+const DEFAULT_BASE_URL =
+  'https://gateway.ai.cloudflare.com/v1/3d275686d20e190931adbada39b35957/soda/compat';
+
+// Chat uses the Kimi model via Cloudflare AI Gateway.
+// This is a reasoning model with an 8192 output cap.
+const PINNED_MODEL = 'workers-ai/@cf/moonshotai/kimi-k2.6';
 
 // Hard server-side limits
 const MAX_BODY_BYTES = 64 * 1024;     // 64 KB request body
@@ -26,9 +29,8 @@ const MAX_TEMPERATURE = 1.0;
 const ALLOWED_FIELDS = new Set(['messages', 'temperature', 'top_p', 'stream', 'max_tokens', 'response_format']);
 
 export async function onRequestPost({ request, env }) {
-  const apiKey = env.MOONSHOT_API_KEY || env.OPENAI_API_KEY;
-  if (!apiKey) {
-    return json({ error: 'Server is missing MOONSHOT_API_KEY or OPENAI_API_KEY' }, 500);
+  if (!env.OPENAI_API_KEY) {
+    return json({ error: 'Server is missing OPENAI_API_KEY' }, 500);
   }
 
   // Optional Origin allowlist (defense in depth; same-origin browsers send Origin)
@@ -131,7 +133,7 @@ export async function onRequestPost({ request, env }) {
   // Force streaming off so we can fully control response size
   safe.stream = false;
 
-  const baseUrl = env.MOONSHOT_BASE_URL || env.OPENAI_BASE_URL || DEFAULT_BASE_URL;
+  const baseUrl = env.OPENAI_BASE_URL || DEFAULT_BASE_URL;
   const upstream = `${baseUrl.replace(/\/$/, '')}/chat/completions`;
 
   let resp;
@@ -140,7 +142,7 @@ export async function onRequestPost({ request, env }) {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        Authorization: `Bearer ${apiKey}`,
+        Authorization: `Bearer ${env.OPENAI_API_KEY}`,
       },
       body: JSON.stringify(safe),
     });

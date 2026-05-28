@@ -51,5 +51,11 @@ export async function chat(messages, { temperature = 0.6, max_tokens, response_f
   if (max_tokens) req.max_tokens = max_tokens;
   if (response_format) req.response_format = response_format;
   const res = await client.chat.completions.create(req);
-  return res.choices?.[0]?.message?.content ?? '';
+  const content = res.choices?.[0]?.message?.content ?? '';
+  // Diagnostic logging — visible in browser devtools console
+  console.log('[chat] finish_reason:', res.choices?.[0]?.finish_reason, '| usage:', res.usage, '| content length:', content.length);
+  if (!content) {
+    console.error('[chat] EMPTY content. Full response:', res);
+  }
+  return content;
 }

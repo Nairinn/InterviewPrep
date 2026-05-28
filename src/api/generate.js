@@ -170,7 +170,7 @@ export async function generateProblem(modeId, hint) {
       { role: 'system', content: 'You generate strictly valid JSON for a coding interview simulator. Output ONLY a single JSON object — no markdown fences, no preamble, no explanation, no text after the closing brace. Use double-quoted strings, true/false/null. Escape newlines inside string values as \\n.' },
       { role: 'user', content: prompt },
     ],
-    { temperature: 0.6, max_tokens: 8192, response_format: { type: 'json_object' } }
+    { temperature: 0.6, max_tokens: 8192 }
   );
   let parsed;
   try {

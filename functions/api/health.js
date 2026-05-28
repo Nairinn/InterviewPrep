@@ -1,7 +1,7 @@
 export async function onRequestGet() {
   try {
     // Test if we can import seeds without crashing
-    const seeds = await import('../../lib/seed-data.js');
+    const seeds = await import('../../seed-data.js');
     return new Response(
       JSON.stringify({
         ok: true,

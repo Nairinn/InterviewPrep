@@ -9,7 +9,7 @@ import {
   saveProblem,
   generateProblemId,
 } from '../../lib/kv.js';
-import * as seeds from '../../lib/seed-data.js';
+import * as seeds from '../../seed-data.js';
 
 // Problem generation runs on Cloudflare AI Gateway via user's configured model.
 const DEFAULT_BASE_URL =

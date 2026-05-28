@@ -1,12 +1,21 @@
-export async function onRequestGet() {
+export async function onRequestGet({ request }) {
   try {
-    // Test if we can import seeds without crashing
-    const seeds = await import('../../seed-data.js');
+    const url = new URL(request.url);
+    const origin = `${url.protocol}//${url.host}`;
+    
+    // Test fetching seeds via HTTP (same approach as next.js)
+    const resp = await fetch(`${origin}/seed/bug_hunt.json`);
+    if (!resp.ok) {
+      return new Response(
+        JSON.stringify({ ok: false, error: `Static file fetch failed: ${resp.status}` }),
+        { status: 500, headers: { 'Content-Type': 'application/json' } }
+      );
+    }
+    const seeds = await resp.json();
     return new Response(
       JSON.stringify({
         ok: true,
-        seedKeys: Object.keys(seeds),
-        bugHuntCount: seeds.bug_hunt_seeds?.length || 0,
+        bugHuntCount: Array.isArray(seeds) ? seeds.length : 'not-array',
       }),
       { headers: { 'Content-Type': 'application/json' } }
     );

@@ -9,7 +9,6 @@ import {
   saveProblem,
   generateProblemId,
 } from '../../lib/kv.js';
-import * as seeds from '../../seed-data.js';
 
 // Problem generation runs on Cloudflare AI Gateway via user's configured model.
 const DEFAULT_BASE_URL =
@@ -19,15 +18,15 @@ const MAX_OUTPUT_TOKENS = 8192;
 
 const MODE_CONFIG = {
   bug_hunt: {
-    seedArray: seeds.bug_hunt_seeds,
+    seedPath: '/seed/bug_hunt.json',
     prompt: (hint) => `Generate a realistic multi-file Python backend codebase simulating a ${hint || 'random small backend'} application. Use 4-5 files. The code should look like something a junior engineer wrote — real logic, not toy examples. Seed exactly 5 bugs spread across different files. Bug types to use: off-by-one errors, missing edge case handling, wrong return values, subtle logic errors, mutable default argument, missing error handling, incorrect boolean conditions, wrong comparison operators. Do not comment where the bugs are. Also generate a unittest test file with at least 8 tests — tests that cover the buggy behavior should fail initially, and pass once the candidate fixes the bugs.\n\nIMPORTANT CONSTRAINTS:\n- Only use these Python stdlib modules: os, sys, io, json, datetime, collections, itertools, functools, re, math, unittest\n- No file I/O, no network calls, no third-party packages\n- Tests must import from generated files using plain top-level imports\n- Each file is a single module — no packages, no subdirectories\n- Return ONLY valid JSON. No markdown, no backticks, no preamble.\n\nSchema:\n{\n  "domain": "...",\n  "files": [{"name": "...", "content": "..."}],\n  "test_file": {"name": "test_solution.py", "content": "..."},\n  "bugs": [{"file": "...", "line_hint": 0, "description": "..."}],\n  "checkpoints": [\n    {"id": 1, "title": "Orientation", "ai_enabled": false, "task": "Run the tests. Read the output carefully. Find and fix bugs #1 and #2 without using the AI assistant."},\n    {"id": 2, "title": "Feature Extension", "ai_enabled": true, "task": "Implement a new feature using existing patterns. Describe the feature concretely tied to the domain."},\n    {"id": 3, "title": "Optimization", "ai_enabled": true, "task": "Fix the remaining bugs and explain each fix in the chat."},\n    {"id": 4, "title": "Edge Cases", "ai_enabled": true, "task": "Add input validation and error handling to the public functions."}\n  ],\n  "stubs": []\n}`,
   },
   feature: {
-    seedArray: seeds.feature_seeds,
+    seedPath: '/seed/feature.json',
     prompt: (hint) => `Generate a realistic multi-file Python codebase for a ${hint || 'random small backend or CLI'} application with 4-5 files. The codebase must be fully functional except for exactly 4 stubbed functions marked with TODO comments and raise NotImplementedError. The stubs should be in different files. Surrounding code must provide enough context to understand what needs to be implemented. Also generate a unittest test file with at least 8 tests — stub tests should fail initially (NotImplementedError), and pass once correctly implemented.\n\nIMPORTANT CONSTRAINTS:\n- Only use these Python stdlib modules: os, sys, io, json, datetime, collections, itertools, functools, re, math, unittest\n- No file I/O, no network calls, no third-party packages\n- Tests must import from generated files using plain top-level imports\n- Each file is a single module — no packages, no subdirectories\n- Return ONLY valid JSON. No markdown, no backticks, no preamble.\n\nSchema:\n{\n  "domain": "...",\n  "files": [{"name": "...", "content": "..."}],\n  "test_file": {"name": "test_solution.py", "content": "..."},\n  "stubs": [{"file": "...", "function": "...", "description": "..."}],\n  "checkpoints": [\n    {"id": 1, "title": "Orientation", "ai_enabled": false, "task": "Read the codebase. Run the tests to see what is failing. Write a comment at the top of the main file explaining the architecture in your own words."},\n    {"id": 2, "title": "Core Feature", "ai_enabled": true, "task": "Implement stub #1 and #2."},\n    {"id": 3, "title": "Integration", "ai_enabled": true, "task": "Implement stub #3 and wire up the pieces."},\n    {"id": 4, "title": "Polish", "ai_enabled": true, "task": "Implement stub #4 and add input validation."}\n  ],\n  "bugs": []\n}`,
   },
   debug: {
-    seedArray: seeds.debug_seeds,
+    seedPath: '/seed/debug.json',
     prompt: (hint) => `Generate a realistic multi-file Python codebase for a ${hint || 'data processing'} application with exactly 6 files. The codebase must run without raising exceptions on the happy path but contain exactly 5 bugs that produce silently wrong output — wrong aggregations, dropped records, off-by-one time windows, stale results, wrong sort order, incorrect calculations. Each bug must be in a different file. No bug should cause an exception. The bugs must be subtle. Also generate a unittest test file with at least 10 tests. Each failing test must show what value was expected vs what the buggy code produces. Tests should fail with wrong values, NOT exceptions. Include at minimum these bug types: wrong aggregation logic, operator precedence issue without parens, boundary condition using < instead of <=, a function that mutates and returns the wrong variable, a string/type coercion bug that produces wrong comparison results.\n\nIMPORTANT CONSTRAINTS:\n- Only use these Python stdlib modules: os, sys, io, json, datetime, collections, itertools, functools, re, math, unittest\n- No file I/O, no network calls, no third-party packages\n- Tests must import from generated files using plain top-level imports\n- Each file is a single module — no packages, no subdirectories\n- Return ONLY valid JSON. No markdown, no backticks, no preamble.\n\nSchema:\n{\n  "domain": "...",\n  "files": [{"name": "...", "content": "..."}],\n  "test_file": {"name": "test_solution.py", "content": "..."},\n  "bugs": [{"file": "...", "line_hint": 0, "description": "...", "why_subtle": "...", "prevention": "..."}],\n  "checkpoints": [\n    {"id": 1, "title": "Reproduce", "ai_enabled": false, "task": "Run the full test suite. For each failing test, add a comment in the relevant file identifying which function you think is responsible and why. Annotate at least 4 of the 5 bugs before proceeding."},\n    {"id": 2, "title": "Isolate", "ai_enabled": true, "task": "Using the AI as a sounding board, narrow down the exact lines causing bugs #1, #2, and #3. Explain your reasoning in chat for each one."},\n    {"id": 3, "title": "Fix & Verify", "ai_enabled": true, "task": "Patch all 5 bugs. Run tests after each individual fix. All tests must pass."},\n    {"id": 4, "title": "Post-mortem", "ai_enabled": true, "task": "In the chat, explain each bug: root cause, why it was hard to spot, and how you would prevent it in production."}\n  ],\n  "stubs": []\n}`,
   },
 };
@@ -37,6 +36,24 @@ const DOMAIN_HINTS = [
   'blog CMS', 'e-commerce cart', 'payment gateway', 'notification service',
   'user authentication', 'analytics dashboard', 'file storage', 'API rate limiter',
 ];
+
+let seedCache = {};
+
+async function fetchSeeds(mode, origin) {
+  if (seedCache[mode]) return seedCache[mode];
+  const config = MODE_CONFIG[mode];
+  if (!config || !config.seedPath) return [];
+  try {
+    const resp = await fetch(`${origin}${config.seedPath}`);
+    if (!resp.ok) return [];
+    const data = await resp.json();
+    const seeds = Array.isArray(data) ? data : [];
+    seedCache[mode] = seeds;
+    return seeds;
+  } catch {
+    return [];
+  }
+}
 
 export async function onRequestGet({ request, env }) {
   try {
@@ -51,12 +68,14 @@ export async function onRequestGet({ request, env }) {
 
     const config = MODE_CONFIG[mode];
     const solved = await getUserSolved(userId, env);
+    const origin = `${url.protocol}//${url.host}`;
 
     // Build the pool of available problems: seeds + KV entries
     const available = [];
 
     // Add seeds
-    for (const problem of config.seedArray || []) {
+    const seedProblems = await fetchSeeds(mode, origin);
+    for (const problem of seedProblems) {
       if (!solved.has(`${mode}:${problem.id}`)) {
         available.push({ source: 'seed', id: problem.id, data: problem });
       }

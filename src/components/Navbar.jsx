@@ -9,6 +9,7 @@ export default function Navbar({
   currentCheckpointIdx,
   onRunTests,
   onNewProblem,
+  onHistory,
   runningTests,
   pyodideReady,
 }) {
@@ -55,11 +56,18 @@ export default function Navbar({
         Python ▾
       </div>
 
-      <div className="text-xs text-gray-500 font-mono">llama-3.3-70b</div>
+      <div className="text-xs text-gray-500 font-mono">moonshot-v1-8k</div>
 
       <div className={`font-mono text-sm tabular-nums ${lowTime ? 'text-red-400' : 'text-gray-200'}`}>
         {formatTime(sessionSeconds)}
       </div>
+
+      <button
+        onClick={onHistory}
+        className="px-3 py-1.5 bg-bg-700 hover:bg-bg-600 rounded text-xs"
+      >
+        History
+      </button>
 
       <button
         onClick={onNewProblem}

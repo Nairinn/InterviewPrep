@@ -11,6 +11,8 @@ import {
 } from '../../lib/kv.js';
 import * as seeds from '../../lib/seed-data.js';
 
+// Problem generation runs on Cloudflare AI Gateway (llama-3.3-70b) for reliable
+// large JSON output. Chat runs on Moonshot. Keep credentials separate.
 const DEFAULT_BASE_URL =
   'https://gateway.ai.cloudflare.com/v1/3d275686d20e190931adbada39b35957/soda/compat';
 const PINNED_MODEL = 'workers-ai/@cf/meta/llama-3.3-70b-instruct-fp8-fast';
@@ -77,8 +79,9 @@ export async function onRequestGet({ request, env }) {
   }
 
   // All problems solved — generate a new one
-  if (!env.OPENAI_API_KEY) {
-    return json({ error: 'No problems available and server cannot generate new ones (missing OPENAI_API_KEY)' }, 503);
+  const genApiKey = env.CF_AI_API_KEY || env.OPENAI_API_KEY;
+  if (!genApiKey) {
+    return json({ error: 'No problems available and server cannot generate new ones (missing CF_AI_API_KEY or OPENAI_API_KEY)' }, 503);
   }
 
   const hint = hintParam || DOMAIN_HINTS[Math.floor(Math.random() * DOMAIN_HINTS.length)];
@@ -114,8 +117,9 @@ async function generateProblem(mode, hint, env) {
     { role: 'user', content: config.prompt(hint) },
   ];
 
-  const baseUrl = env.OPENAI_BASE_URL || DEFAULT_BASE_URL;
+  const baseUrl = env.CF_AI_BASE_URL || env.OPENAI_BASE_URL || DEFAULT_BASE_URL;
   const upstream = `${baseUrl.replace(/\/$/, '')}/chat/completions`;
+  const genApiKey = env.CF_AI_API_KEY || env.OPENAI_API_KEY;
 
   let resp;
   try {
@@ -123,7 +127,7 @@ async function generateProblem(mode, hint, env) {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        Authorization: `Bearer ${env.OPENAI_API_KEY}`,
+        Authorization: `Bearer ${genApiKey}`,
       },
       body: JSON.stringify({
         model: PINNED_MODEL,

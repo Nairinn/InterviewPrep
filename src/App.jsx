@@ -9,6 +9,7 @@ import Terminal from './components/Terminal.jsx';
 import ChatSidebar from './components/ChatSidebar.jsx';
 import CheckpointDrawer from './components/CheckpointDrawer.jsx';
 import NewProblemModal from './components/NewProblemModal.jsx';
+import HistoryModal from './components/HistoryModal.jsx';
 import DebriefScreen from './components/DebriefScreen.jsx';
 import { MODES } from './api/generate.js';
 import { fetchNextProblem, markProblemSolved } from './api/problems.js';
@@ -35,6 +36,7 @@ export default function App() {
   const [modeId, setModeId] = useState(null);
   const [problem, setProblem] = useState(null); // { domain, files, test_file, checkpoints, bugs, stubs }
   const [problemId, setProblemId] = useState(null);
+  const [problemGenerated, setProblemGenerated] = useState(false);
   const [files, setFiles] = useState([]); // [{name, content}]
   const [activeFile, setActiveFile] = useState(null);
   const [originalContent, setOriginalContent] = useState({}); // baseline for dirty indicator
@@ -60,6 +62,7 @@ export default function App() {
 
   // Modal
   const [newProblemOpen, setNewProblemOpen] = useState(false);
+  const [historyOpen, setHistoryOpen] = useState(false);
 
   // Pyodide
   const { status: pyodideStatus, error: pyodideError, runTests } = usePyodide();
@@ -112,7 +115,13 @@ export default function App() {
     setSessionReason(reason);
     if (modeId && problemId) {
       try {
-        await markProblemSolved(modeId, problemId);
+        const totalElapsed = SESSION_SECONDS - sessionRemaining;
+        await markProblemSolved(modeId, problemId, {
+          domain: problem?.domain || '',
+          totalTime: totalElapsed,
+          checkpointTimes,
+          generated: problemGenerated,
+        });
       } catch (err) {
         console.warn('Failed to mark problem solved:', err);
       }
@@ -130,8 +139,8 @@ export default function App() {
     setStage(STAGES.GENERATING);
     setGenError(null);
     try {
-      const { problem: data } = await fetchNextProblem(modeIdToUse, hint);
-      hydrateProblem(modeIdToUse, data);
+      const { problem: data, generated } = await fetchNextProblem(modeIdToUse, hint);
+      hydrateProblem(modeIdToUse, data, generated);
       setStage(STAGES.RUNNING);
     } catch (err) {
       console.error(err);
@@ -140,10 +149,11 @@ export default function App() {
     }
   }
 
-  function hydrateProblem(modeIdToUse, data) {
+  function hydrateProblem(modeIdToUse, data, generated = false) {
     setModeId(modeIdToUse);
     setProblem(data);
     setProblemId(data.id || null);
+    setProblemGenerated(generated);
     setFiles(data.files.map((f) => ({ name: f.name, content: f.content })));
     setActiveFile(data.files[0]?.name || null);
     const baseline = {};
@@ -227,6 +237,7 @@ export default function App() {
     setStage(STAGES.START);
     setProblem(null);
     setProblemId(null);
+    setProblemGenerated(false);
     setModeId(null);
     setFiles([]);
     setCheckpoints([]);
@@ -305,6 +316,7 @@ export default function App() {
         currentCheckpointIdx={currentCheckpointIdx}
         onRunTests={handleRunTests}
         onNewProblem={() => setNewProblemOpen(true)}
+        onHistory={() => setHistoryOpen(true)}
         runningTests={runningTests}
         pyodideReady={pyodideStatus === 'ready'}
       />
@@ -381,6 +393,10 @@ export default function App() {
           onClose={() => setNewProblemOpen(false)}
           onRegenerate={handleNewProblem}
         />
+      )}
+
+      {historyOpen && (
+        <HistoryModal onClose={() => setHistoryOpen(false)} />
       )}
     </div>
   );

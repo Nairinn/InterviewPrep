@@ -3,6 +3,7 @@
 // In dev (vite only, no wrangler): falls back to loading seed JSON directly
 
 const LOCAL_STORAGE_KEY = 'interviewpad_user_id';
+const HISTORY_KEY = 'interviewpad_history';
 
 export function getUserId() {
   let id = localStorage.getItem(LOCAL_STORAGE_KEY);
@@ -53,7 +54,7 @@ export async function fetchNextProblem(mode, hint = '') {
   }
 }
 
-export async function markProblemSolved(mode, problemId) {
+export async function markProblemSolved(mode, problemId, meta = {}) {
   const user = getUserId();
 
   // Always track locally for dev fallback
@@ -66,11 +67,28 @@ export async function markProblemSolved(mode, problemId) {
     // ignore localStorage errors
   }
 
+  // Append to local history for dev fallback
+  try {
+    const history = JSON.parse(localStorage.getItem(HISTORY_KEY) || '[]');
+    history.push({
+      mode,
+      problemId,
+      domain: meta.domain || '',
+      totalTime: meta.totalTime || 0,
+      checkpointTimes: meta.checkpointTimes || {},
+      generated: !!meta.generated,
+      completedAt: new Date().toISOString(),
+    });
+    localStorage.setItem(HISTORY_KEY, JSON.stringify(history));
+  } catch {
+    // ignore
+  }
+
   try {
     const resp = await fetch('/api/problem/solved', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ mode, problemId, user }),
+      body: JSON.stringify({ mode, problemId, user, meta }),
     });
     if (!resp.ok) {
       const data = await resp.json().catch(() => ({}));
@@ -78,5 +96,26 @@ export async function markProblemSolved(mode, problemId) {
     }
   } catch (err) {
     console.warn('Problem solved API unavailable:', err.message);
+  }
+}
+
+export async function fetchHistory() {
+  const user = getUserId();
+
+  try {
+    const resp = await fetch(`/api/problem/history?user=${encodeURIComponent(user)}`, { method: 'GET' });
+    if (resp.ok) {
+      const data = await resp.json();
+      if (data.history) return data.history;
+    }
+  } catch (err) {
+    console.warn('History API unavailable, falling back to localStorage:', err.message);
+  }
+
+  // Dev fallback
+  try {
+    return JSON.parse(localStorage.getItem(HISTORY_KEY) || '[]').reverse();
+  } catch {
+    return [];
   }
 }

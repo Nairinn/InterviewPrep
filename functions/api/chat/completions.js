@@ -1,43 +1,34 @@
 // Cloudflare Pages Function — POST /api/chat/completions
-// Same-origin proxy to the AI Gateway. Holds the API key as a server-side secret,
+// Same-origin proxy to the Moonshot API. Holds the API key as a server-side secret,
 // pins the model, caps token usage, and validates the request body so a malicious
 // caller can't drain the key by switching models or asking for huge completions.
 //
 // Required env vars (Cloudflare dashboard or `wrangler pages secret put`):
-//   OPENAI_API_KEY     — Cloudflare API token with Workers AI scope
-//   OPENAI_BASE_URL    — optional override
+//   MOONSHOT_API_KEY   — Moonshot API key (preferred)
+//   OPENAI_API_KEY     — fallback if MOONSHOT_API_KEY is not set
+//   MOONSHOT_BASE_URL  — optional override, default: https://api.moonshot.cn/v1
 //   ALLOWED_ORIGIN     — optional, e.g. "https://interviewpad.pages.dev"
 //                         when set, requests from other Origins are rejected
-//                         (defense in depth — browsers also enforce SOP)
 //   TURNSTILE_SECRET   — optional. When set, every request must carry a valid
 //                         cf-turnstile-token header (verified with Cloudflare).
-//                         Stops curl/script abuse cold.
 
-const DEFAULT_BASE_URL =
-  'https://gateway.ai.cloudflare.com/v1/3d275686d20e190931adbada39b35957/soda/compat';
-
-// AI Gateway /compat endpoint is multi-provider — the model must be prefixed
-// with the provider slug (workers-ai), then the Workers AI model id (@cf/...).
-// llama-3.3-70b is non-reasoning, instruction-tuned, and reliable at structured JSON output.
-// kimi-k2.6 was tried first but is a reasoning model with an 8192 output cap and burns
-// its budget on hidden thinking before producing the answer.
-const PINNED_MODEL = 'workers-ai/@cf/meta/llama-3.3-70b-instruct-fp8-fast';
+const DEFAULT_BASE_URL = 'https://api.moonshot.cn/v1';
+const PINNED_MODEL = 'moonshot-v1-8k';
 
 // Hard server-side limits
 const MAX_BODY_BYTES = 64 * 1024;     // 64 KB request body
-// kimi-k2.6 is a reasoning model — hidden thinking tokens count toward this budget,
-// so we need substantial headroom on top of the visible output we want.
-const MAX_OUTPUT_TOKENS = 32768;
+const MAX_OUTPUT_TOKENS = 8192;
 const MAX_MESSAGES = 40;               // cap chat history length
-const MAX_MESSAGE_CHARS = 30000;       // cap per-message size (full file context can be ~10-20k)
+const MAX_MESSAGE_CHARS = 30000;       // cap per-message size
 const MAX_TEMPERATURE = 1.0;
 
 // Only these fields from the incoming body are forwarded upstream
 const ALLOWED_FIELDS = new Set(['messages', 'temperature', 'top_p', 'stream', 'max_tokens', 'response_format']);
 
 export async function onRequestPost({ request, env }) {
-  if (!env.OPENAI_API_KEY) {
-    return json({ error: 'Server is missing OPENAI_API_KEY' }, 500);
+  const apiKey = env.MOONSHOT_API_KEY || env.OPENAI_API_KEY;
+  if (!apiKey) {
+    return json({ error: 'Server is missing MOONSHOT_API_KEY or OPENAI_API_KEY' }, 500);
   }
 
   // Optional Origin allowlist (defense in depth; same-origin browsers send Origin)
@@ -140,7 +131,7 @@ export async function onRequestPost({ request, env }) {
   // Force streaming off so we can fully control response size
   safe.stream = false;
 
-  const baseUrl = env.OPENAI_BASE_URL || DEFAULT_BASE_URL;
+  const baseUrl = env.MOONSHOT_BASE_URL || env.OPENAI_BASE_URL || DEFAULT_BASE_URL;
   const upstream = `${baseUrl.replace(/\/$/, '')}/chat/completions`;
 
   let resp;
@@ -149,7 +140,7 @@ export async function onRequestPost({ request, env }) {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        Authorization: `Bearer ${env.OPENAI_API_KEY}`,
+        Authorization: `Bearer ${apiKey}`,
       },
       body: JSON.stringify(safe),
     });
@@ -158,7 +149,6 @@ export async function onRequestPost({ request, env }) {
   }
 
   // Pass through upstream body + status, but never expose upstream headers
-  // (some providers echo auth-adjacent headers back; safer to whitelist).
   const text = await resp.text();
   return new Response(text, {
     status: resp.status,

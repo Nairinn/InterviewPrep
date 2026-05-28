@@ -2,20 +2,21 @@ import OpenAI from 'openai';
 import { getTurnstileToken, isTurnstileConfigured } from '../utils/turnstile.js';
 
 // In production the browser calls our same-origin Pages Function at /api,
-// which forwards to the Cloudflare AI Gateway with the secret key.
-// In local dev (npm run dev), set VITE_OPENAI_API_KEY in .env and the SDK
-// will call the gateway directly — convenient but the key ends up in the
+// which forwards to the Moonshot API with the secret key.
+// In local dev (npm run dev), set VITE_MOONSHOT_API_KEY in .env and the SDK
+// will call Moonshot directly — convenient but the key ends up in the
 // bundle, so never `vite build` with that key set.
 
-const directApiKey = import.meta.env.VITE_OPENAI_API_KEY;
+const directApiKey = import.meta.env.VITE_MOONSHOT_API_KEY || import.meta.env.VITE_OPENAI_API_KEY;
 const directBaseUrl =
+  import.meta.env.VITE_MOONSHOT_BASE_URL ||
   import.meta.env.VITE_OPENAI_BASE_URL ||
-  'https://gateway.ai.cloudflare.com/v1/3d275686d20e190931adbada39b35957/soda/compat';
+  'https://api.moonshot.cn/v1';
 
-export const KIMI_MODEL = 'workers-ai/@cf/meta/llama-3.3-70b-instruct-fp8-fast';
+export const CHAT_MODEL = 'moonshot-v1-8k';
 
 // Custom fetch that injects a fresh Turnstile token on every /api/* call.
-// Only used in proxy mode; dev mode calls the gateway directly with no token.
+// Only used in proxy mode; dev mode calls Moonshot directly with no token.
 async function fetchWithTurnstile(url, init = {}) {
   if (!isTurnstileConfigured) return fetch(url, init);
   const token = await getTurnstileToken();
@@ -26,7 +27,7 @@ async function fetchWithTurnstile(url, init = {}) {
 
 export function getClient() {
   if (directApiKey) {
-    // Dev mode: call the gateway directly from the browser.
+    // Dev mode: call Moonshot directly from the browser.
     return new OpenAI({
       apiKey: directApiKey,
       baseURL: directBaseUrl,
@@ -47,7 +48,7 @@ export function getClient() {
 
 export async function chat(messages, { temperature = 0.6, max_tokens, response_format } = {}) {
   const client = getClient();
-  const req = { model: KIMI_MODEL, messages, temperature };
+  const req = { model: CHAT_MODEL, messages, temperature };
   if (max_tokens) req.max_tokens = max_tokens;
   if (response_format) req.response_format = response_format;
   const res = await client.chat.completions.create(req);

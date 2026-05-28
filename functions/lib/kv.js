@@ -53,6 +53,24 @@ export async function markProblemSolved(userId, mode, problemId, env) {
   await env.PROBLEMS.put(`user:${userId}:solved`, JSON.stringify([...solved]));
 }
 
+export async function getUserHistory(userId, env) {
+  if (!userId) return [];
+  const key = `user:${userId}:history`;
+  try {
+    const data = await env.PROBLEMS.get(key, { type: 'json' });
+    return Array.isArray(data) ? data : [];
+  } catch {
+    return [];
+  }
+}
+
+export async function appendHistory(userId, entry, env) {
+  if (!userId) return;
+  const history = await getUserHistory(userId, env);
+  history.push(entry);
+  await env.PROBLEMS.put(`user:${userId}:history`, JSON.stringify(history));
+}
+
 export function generateProblemId() {
   return `gen:${Date.now()}:${Math.random().toString(36).slice(2, 8)}`;
 }

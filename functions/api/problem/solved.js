@@ -1,8 +1,8 @@
 // Cloudflare Pages Function — POST /api/problem/solved
-// Marks a problem as solved for a user.
-// Body: { mode: string, problemId: string, user: string }
+// Marks a problem as solved for a user and appends session metadata to history.
+// Body: { mode: string, problemId: string, user: string, meta?: { domain, totalTime, checkpointTimes, generated } }
 
-import { markProblemSolved } from '../../lib/kv.js';
+import { markProblemSolved, appendHistory } from '../../lib/kv.js';
 
 export async function onRequestPost({ request, env }) {
   let body;
@@ -12,13 +12,24 @@ export async function onRequestPost({ request, env }) {
     return json({ error: 'Invalid JSON body' }, 400);
   }
 
-  const { mode, problemId, user } = body || {};
+  const { mode, problemId, user, meta } = body || {};
   if (!mode || !problemId || !user) {
     return json({ error: 'Missing mode, problemId, or user' }, 400);
   }
 
   try {
     await markProblemSolved(user, mode, problemId, env);
+    if (meta && typeof meta === 'object') {
+      await appendHistory(user, {
+        mode,
+        problemId,
+        domain: meta.domain || '',
+        totalTime: meta.totalTime || 0,
+        checkpointTimes: meta.checkpointTimes || {},
+        generated: !!meta.generated,
+        completedAt: new Date().toISOString(),
+      }, env);
+    }
     return json({ ok: true });
   } catch (err) {
     console.error('KV error marking solved:', err);

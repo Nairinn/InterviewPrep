@@ -11,11 +11,11 @@ import {
 } from '../../lib/kv.js';
 import * as seeds from '../../lib/seed-data.js';
 
-// Problem generation runs on Cloudflare AI Gateway (llama for reliable large JSON).
+// Problem generation runs on Cloudflare AI Gateway via user's configured model.
 const DEFAULT_BASE_URL =
   'https://gateway.ai.cloudflare.com/v1/3d275686d20e190931adbada39b35957/soda/compat';
-const PINNED_MODEL = 'workers-ai/@cf/meta/llama-3.3-70b-instruct-fp8-fast';
-const MAX_OUTPUT_TOKENS = 32768;
+const PINNED_MODEL = 'workers-ai/@cf/moonshotai/kimi-k2.6';
+const MAX_OUTPUT_TOKENS = 8192;
 
 const MODE_CONFIG = {
   bug_hunt: {
@@ -120,7 +120,10 @@ async function generateProblem(mode, hint, env) {
   ];
 
   const baseUrl = env.OPENAI_BASE_URL || DEFAULT_BASE_URL;
-  const upstream = `${baseUrl.replace(/\/$/, '')}/chat/completions`;
+  const normalized = baseUrl.replace(/\/$/, '');
+  const upstream = normalized.endsWith('/chat/completions')
+    ? normalized
+    : `${normalized}/chat/completions`;
 
   let resp;
   try {

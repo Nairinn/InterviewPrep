@@ -134,7 +134,10 @@ export async function onRequestPost({ request, env }) {
   safe.stream = false;
 
   const baseUrl = env.OPENAI_BASE_URL || DEFAULT_BASE_URL;
-  const upstream = `${baseUrl.replace(/\/$/, '')}/chat/completions`;
+  const normalized = baseUrl.replace(/\/$/, '');
+  const upstream = normalized.endsWith('/chat/completions')
+    ? normalized
+    : `${normalized}/chat/completions`;
 
   let resp;
   try {

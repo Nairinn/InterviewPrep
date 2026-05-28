@@ -34,9 +34,12 @@ export function getClient() {
     });
   }
   // Prod mode: same-origin Pages Function (with Turnstile if configured).
+  // OpenAI SDK requires an absolute baseURL; '/api' would throw "Invalid URL".
+  const proxyBase =
+    typeof window !== 'undefined' ? `${window.location.origin}/api` : '/api';
   return new OpenAI({
     apiKey: 'proxy', // unused server-side
-    baseURL: '/api',
+    baseURL: proxyBase,
     dangerouslyAllowBrowser: true,
     fetch: fetchWithTurnstile,
   });

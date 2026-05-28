@@ -51,11 +51,14 @@ export async function chat(messages, { temperature = 0.6, max_tokens, response_f
   if (max_tokens) req.max_tokens = max_tokens;
   if (response_format) req.response_format = response_format;
   const res = await client.chat.completions.create(req);
-  const content = res.choices?.[0]?.message?.content ?? '';
-  // Diagnostic logging — visible in browser devtools console
-  console.log('[chat] finish_reason:', res.choices?.[0]?.finish_reason, '| usage:', res.usage, '| content length:', content.length);
+  const msg = res.choices?.[0]?.message ?? {};
+  // Some reasoning models put output in `reasoning_content` or `reasoning` rather than `content`
+  let content = msg.content ?? '';
+  if (!content && msg.reasoning_content) content = msg.reasoning_content;
+  if (!content && msg.reasoning) content = msg.reasoning;
+  console.log('[chat] finish_reason:', res.choices?.[0]?.finish_reason, '| usage:', res.usage, '| content length:', content.length, '| message keys:', Object.keys(msg));
   if (!content) {
-    console.error('[chat] EMPTY content. Full response:', res);
+    console.error('[chat] EMPTY content. message object:', msg, '| full response:', res);
   }
   return content;
 }

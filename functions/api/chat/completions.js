@@ -22,7 +22,9 @@ const PINNED_MODEL = 'workers-ai/@cf/moonshotai/kimi-k2.6';
 
 // Hard server-side limits
 const MAX_BODY_BYTES = 64 * 1024;     // 64 KB request body
-const MAX_OUTPUT_TOKENS = 8192;        // cap completion length (codebase generation needs ~6-8k)
+// kimi-k2.6 is a reasoning model — hidden thinking tokens count toward this budget,
+// so we need substantial headroom on top of the visible output we want.
+const MAX_OUTPUT_TOKENS = 32768;
 const MAX_MESSAGES = 40;               // cap chat history length
 const MAX_MESSAGE_CHARS = 30000;       // cap per-message size (full file context can be ~10-20k)
 const MAX_TEMPERATURE = 1.0;

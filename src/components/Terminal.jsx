@@ -1,6 +1,6 @@
 import React from 'react';
 
-export default function Terminal({ result, collapsed, onToggle, onClear, running, error }) {
+export default function Terminal({ result, runOutput, collapsed, onToggle, onClear, running, runningLabel, error }) {
   return (
     <div
       className={`bg-bg-800 border-t border-bg-600 flex flex-col flex-shrink-0 transition-all ${
@@ -40,11 +40,23 @@ export default function Terminal({ result, collapsed, onToggle, onClear, running
           {running && (
             <div className="flex items-center gap-2 text-gray-400">
               <span className="spinner w-3 h-3" />
-              Running tests...
+              {runningLabel || 'Running...'}
             </div>
           )}
-          {!running && !result && !error && (
-            <div className="text-gray-500">Click "Run Tests" to execute the test suite.</div>
+          {!running && runOutput && (
+            <>
+              <div className="text-[10px] uppercase tracking-widest text-gray-500 mb-1">main.py stdout</div>
+              <pre className="text-gray-200 whitespace-pre-wrap mb-3">{runOutput.stdout || '(no output)'}</pre>
+              {runOutput.stderr && runOutput.stderr.trim() && (
+                <>
+                  <div className="text-[10px] uppercase tracking-widest text-red-400 mb-1">stderr</div>
+                  <pre className="text-red-300 whitespace-pre-wrap">{runOutput.stderr}</pre>
+                </>
+              )}
+            </>
+          )}
+          {!running && !result && !runOutput && !error && (
+            <div className="text-gray-500">Click "Run" to execute main.py, or "Run Tests" for the unittest suite.</div>
           )}
           {error && (
             <div className="text-orange-400 whitespace-pre-wrap">{error}</div>

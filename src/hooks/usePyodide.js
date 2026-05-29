@@ -105,7 +105,65 @@ finally:
     return { stdout: arr[0] || '', stderr: arr[1] || '' };
   }
 
-  return { status, error, runTests };
+  /**
+   * Execute a single Python file inside the workdir. Captures stdout + stderr.
+   * @param {Record<string,string>} fileMap - filename -> content for the project
+   * @param {string} entryFile - which file to run (e.g. 'main.py')
+   */
+  async function runFile(fileMap, entryFile) {
+    const py = pyodideRef.current;
+    if (!py) throw new Error('Pyodide not ready');
+    const workdir = '/home/pyodide';
+    try { py.FS.mkdir(workdir); } catch (_) {}
+    // Replace all .py files
+    try {
+      for (const entry of py.FS.readdir(workdir)) {
+        if (entry === '.' || entry === '..') continue;
+        if (entry.endsWith('.py')) {
+          try { py.FS.unlink(`${workdir}/${entry}`); } catch (_) {}
+        }
+      }
+    } catch (_) {}
+    for (const [name, content] of Object.entries(fileMap)) {
+      // Skip non-source files
+      if (!name.endsWith('.py')) continue;
+      py.FS.writeFile(`${workdir}/${name}`, content);
+    }
+    await py.runPythonAsync(`
+import sys
+if '${workdir}' not in sys.path:
+    sys.path.insert(0, '${workdir}')
+to_drop = []
+for mod_name, mod in list(sys.modules.items()):
+    f = getattr(mod, '__file__', None) or ''
+    if f.startswith('${workdir}'):
+        to_drop.append(mod_name)
+for n in to_drop:
+    del sys.modules[n]
+`);
+    const code = `
+import io, sys, traceback, runpy
+_stdout = io.StringIO()
+_stderr = io.StringIO()
+_old_out, _old_err = sys.stdout, sys.stderr
+sys.stdout, sys.stderr = _stdout, _stderr
+try:
+    runpy.run_path('${workdir}/${entryFile}', run_name='__main__')
+except SystemExit:
+    pass
+except Exception:
+    traceback.print_exc(file=_stderr)
+finally:
+    sys.stdout, sys.stderr = _old_out, _old_err
+(_stdout.getvalue(), _stderr.getvalue())
+`;
+    const result = await py.runPythonAsync(code);
+    const arr = result.toJs();
+    result.destroy?.();
+    return { stdout: arr[0] || '', stderr: arr[1] || '' };
+  }
+
+  return { status, error, runTests, runFile };
 }
 
 /**

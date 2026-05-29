@@ -65,7 +65,12 @@ export default function App() {
   const [historyOpen, setHistoryOpen] = useState(false);
 
   // Pyodide
-  const { status: pyodideStatus, error: pyodideError, runTests } = usePyodide();
+  const { status: pyodideStatus, error: pyodideError, runTests, runFile } = usePyodide();
+
+  // Run-code output + Cmd+S toast
+  const [runOutput, setRunOutput] = useState(null); // { stdout, stderr }
+  const [runningCode, setRunningCode] = useState(false);
+  const [saveToast, setSaveToast] = useState(null);
 
   // Timers — single interval drives both session countdown + checkpoint counter
   useEffect(() => {
@@ -242,6 +247,32 @@ export default function App() {
   function handleClearTerminal() {
     setTestResult(null);
     setTestError(null);
+    setRunOutput(null);
+  }
+
+  const handleRunCode = useCallback(async () => {
+    if (!problem || pyodideStatus !== 'ready' || runningCode || runningTests) return;
+    setRunningCode(true);
+    setTestError(null);
+    setTestResult(null);
+    setTerminalCollapsed(false);
+    try {
+      const fileMap = {};
+      for (const f of files) fileMap[f.name] = f.content;
+      const entry = files.find((f) => f.name === 'main.py') ? 'main.py' : null;
+      if (!entry) throw new Error('No main.py to run');
+      const { stdout, stderr } = await runFile(fileMap, entry);
+      setRunOutput({ stdout, stderr });
+    } catch (err) {
+      setTestError(err.message || String(err));
+    } finally {
+      setRunningCode(false);
+    }
+  }, [problem, pyodideStatus, runningCode, runningTests, files, runFile]);
+
+  function handleSave(fileName) {
+    setSaveToast(`Saved ${fileName}`);
+    setTimeout(() => setSaveToast(null), 1400);
   }
 
   function handleNewProblem(newModeId, hint) {
@@ -331,10 +362,13 @@ export default function App() {
         checkpoints={checkpoints}
         currentCheckpointIdx={currentCheckpointIdx}
         onRunTests={handleRunTests}
+        onRunCode={handleRunCode}
         onNewProblem={() => setNewProblemOpen(true)}
         onHistory={() => setHistoryOpen(true)}
         runningTests={runningTests}
+        runningCode={runningCode}
         pyodideReady={pyodideStatus === 'ready'}
+        hasMain={files.some((f) => f.name === 'main.py')}
       />
 
       <CheckpointDrawer
@@ -364,14 +398,17 @@ export default function App() {
               onChange={handleEditorChange}
               onTabPick={setActiveFile}
               dirtyFiles={dirtyFiles}
+              onSave={handleSave}
             />
           </div>
           <Terminal
             result={testResult}
+            runOutput={runOutput}
             collapsed={terminalCollapsed}
             onToggle={() => setTerminalCollapsed(!terminalCollapsed)}
             onClear={handleClearTerminal}
-            running={runningTests}
+            running={runningTests || runningCode}
+            runningLabel={runningCode ? 'Running main.py...' : 'Running tests...'}
             error={testError}
           />
         </div>
@@ -413,6 +450,14 @@ export default function App() {
 
       {historyOpen && (
         <HistoryModal onClose={() => setHistoryOpen(false)} onReplay={replayProblem} />
+      )}
+
+      {saveToast && (
+        <div className="fixed top-16 left-1/2 -translate-x-1/2 bg-bg-700 border border-bg-600 px-4 py-2 rounded text-sm text-gray-200 shadow-lg z-50 animate-slideIn flex items-center gap-2">
+          <span className="text-green-400">✓</span>
+          <span>{saveToast}</span>
+          <span className="text-[10px] text-gray-500 font-mono">⌘S</span>
+        </div>
       )}
     </div>
   );

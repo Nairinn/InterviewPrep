@@ -5,55 +5,57 @@
     "files": [
       {
         "name": "models.py",
-        "content": "class Book:\n    def __init__(self, book_id, title, total_copies):\n        self.book_id = book_id\n        self.title = title\n        self.total_copies = total_copies\n        self.copies_reserved = 0\n\n    def available_copies(self):\n        return self.total_copies - self.copies_reserved\n\n    def is_available(self):\n        # BUG: should be >= 1 to count a single available copy\n        return self.available_copies() > 1\n\n\nclass Member:\n    def __init__(self, member_id, name, tier='basic'):\n        self.member_id = member_id\n        self.name = name\n        self.tier = tier\n\n\nclass Reservation:\n    def __init__(self, book_id, member_id, reserved_on, due_date):\n        self.book_id = book_id\n        self.member_id = member_id\n        self.reserved_on = reserved_on\n        self.due_date = due_date\n        self.returned = False\n"
+        "content": "class Book:\n    def __init__(self, book_id, title, total_copies):\n        self.book_id = book_id\n        self.title = title\n        self.total_copies = total_copies\n        self.copies_reserved = 0\n\n    def available_copies(self):\n        return self.total_copies - self.copies_reserved\n\n    def is_available(self):\n        return self.available_copies() > 1\n\n\nclass Member:\n    def __init__(self, member_id, name, tier='basic'):\n        self.member_id = member_id\n        self.name = name\n        self.tier = tier\n\n\nclass Reservation:\n    def __init__(self, book_id, member_id, reserved_on, due_date):\n        self.book_id = book_id\n        self.member_id = member_id\n        self.reserved_on = reserved_on\n        self.due_date = due_date\n        self.returned = False\n"
       },
       {
         "name": "policies.py",
-        "content": "def max_books_allowed(member):\n    # BUG: 'or' on truthy literal — always returns 10 because the tier check short-circuits\n    if member.tier == 'gold' or 'silver':\n        return 10\n    return 3\n\n\ndef late_fee(days_late, grace_period=3):\n    if days_late <= grace_period:\n        return 0.0\n    # BUG: charges for every day including the free grace ones — should subtract grace_period\n    return days_late * 0.50\n"
+        "content": "def max_books_allowed(member):\n    if member.tier == 'gold' or 'silver':\n        return 10\n    return 3\n\n\ndef late_fee(days_late, grace_period=3):\n    if days_late <= grace_period:\n        return 0.0\n    return days_late * 0.50\n"
       },
       {
         "name": "library.py",
-        "content": "import datetime\nfrom models import Book, Reservation\nfrom policies import max_books_allowed\n\n\nclass Library:\n    def __init__(self):\n        self.books = {}\n        self.members = {}\n        self.reservations = []\n\n    def add_book(self, book):\n        self.books[book.book_id] = book\n\n    def add_member(self, member):\n        self.members[member.member_id] = member\n\n    def reserve(self, book_id, member_id, history=[]):\n        # BUG: mutable default arg — every call shares the same list\n        book = self.books.get(book_id)\n        member = self.members.get(member_id)\n        if book is None or member is None:\n            return None\n\n        active_count = sum(\n            1 for r in self.reservations\n            if r.member_id == member_id and not r.returned\n        )\n        if active_count >= max_books_allowed(member):\n            return None\n        if not book.is_available():\n            return None\n\n        book.copies_reserved += 1\n        today = datetime.date(2024, 6, 1)\n        due = today + datetime.timedelta(days=14)\n        r = Reservation(book_id, member_id, today, due)\n        self.reservations.append(r)\n        history.append((book_id, member_id))\n        return r\n\n    def return_book(self, book_id, member_id):\n        for r in self.reservations:\n            if r.book_id == book_id and r.member_id == member_id and not r.returned:\n                r.returned = True\n                book = self.books.get(book_id)\n                if book is not None:\n                    book.copies_reserved -= 1\n                return True\n        return False\n\n    def member_active_reservations(self, member_id):\n        return [r for r in self.reservations if r.member_id == member_id and not r.returned]\n"
+        "content": "import datetime\nfrom models import Book, Reservation\nfrom policies import max_books_allowed\n\n\nclass Library:\n    def __init__(self):\n        self.books = {}\n        self.members = {}\n        self.reservations = []\n\n    def add_book(self, book):\n        self.books[book.book_id] = book\n\n    def add_member(self, member):\n        self.members[member.member_id] = member\n\n    def reserve(self, book_id, member_id, history=[]):\n        book = self.books.get(book_id)\n        member = self.members.get(member_id)\n        if book is None or member is None:\n            return None\n\n        active_count = sum(\n            1 for r in self.reservations\n            if r.member_id == member_id and not r.returned\n        )\n        if active_count >= max_books_allowed(member):\n            return None\n        if not book.is_available():\n            return None\n\n        book.copies_reserved += 1\n        today = datetime.date(2024, 6, 1)\n        due = today + datetime.timedelta(days=14)\n        r = Reservation(book_id, member_id, today, due)\n        self.reservations.append(r)\n        history.append((book_id, member_id))\n        return r\n\n    def return_book(self, book_id, member_id):\n        for r in self.reservations:\n            if r.book_id == book_id and r.member_id == member_id and not r.returned:\n                r.returned = True\n                book = self.books.get(book_id)\n                if book is not None:\n                    book.copies_reserved -= 1\n                return True\n        return False\n\n    def member_active_reservations(self, member_id):\n        return [r for r in self.reservations if r.member_id == member_id and not r.returned]\n"
       },
       {
         "name": "reports.py",
-        "content": "from collections import Counter\n\n\ndef popular_books(library, top_n=3):\n    counter = Counter(r.book_id for r in library.reservations)\n    # BUG: sorts ascending by count instead of descending\n    sorted_items = sorted(counter.items(), key=lambda kv: kv[1])\n    return [book_id for book_id, _ in sorted_items[:top_n]]\n\n\ndef member_summary(library, member_id):\n    active = library.member_active_reservations(member_id)\n    summary = {\n        'member_id': member_id,\n        'active_count': len(active),\n        'book_ids': [r.book_id for r in active],\n    }\n    # BUG: missing return statement\n"
+        "content": "from collections import Counter\n\n\ndef popular_books(library, top_n=3):\n    counter = Counter(r.book_id for r in library.reservations)\n    sorted_items = sorted(counter.items(), key=lambda kv: kv[1])\n    return [book_id for book_id, _ in sorted_items[:top_n]]\n\n\ndef member_summary(library, member_id):\n    active = library.member_active_reservations(member_id)\n    summary = {\n        'member_id': member_id,\n        'active_count': len(active),\n        'book_ids': [r.book_id for r in active],\n    }\n"
+      },
+      {
+        "name": "main.py",
+        "content": "from models import Book, Member\nfrom library import Library\nfrom policies import max_books_allowed, late_fee\nfrom reports import popular_books, member_summary\n\n\ndef run():\n    lib = Library()\n    lib.add_book(Book('B1', 'Python 101', total_copies=1))\n    lib.add_book(Book('B2', 'Databases', total_copies=3))\n    lib.add_member(Member('M1', 'Alice', tier='basic'))\n    lib.add_member(Member('M2', 'Bob', tier='gold'))\n\n    # Single-copy book should be available\n    print('--- Section A: availability ---')\n    print('B1 available:', lib.books['B1'].is_available())\n\n    # Member limits\n    print('--- Section B: member limits ---')\n    print('basic max:', max_books_allowed(lib.members['M1']))\n    print('gold max:', max_books_allowed(lib.members['M2']))\n\n    # Reservation flow\n    print('--- Section C: reservations ---')\n    r1 = lib.reserve('B1', 'M1')\n    print('M1 reserved B1:', r1 is not None)\n    print('M1 active count:', len(lib.member_active_reservations('M1')))\n\n    # Late fees\n    print('--- Section D: late fees ---')\n    print('1 day late:', late_fee(1))\n    print('4 days late (grace=3):', late_fee(4))\n    print('5 days late (grace=3):', late_fee(5))\n\n    # Popular books (after a few more reservations)\n    lib.reserve('B2', 'M1')\n    lib.reserve('B2', 'M2')\n    print('--- Section E: reports ---')\n    print('top 2 popular:', popular_books(lib, top_n=2))\n    summary = member_summary(lib, 'M1')\n    print('M1 summary:', summary)\n\n\nif __name__ == '__main__':\n    run()\n"
+      },
+      {
+        "name": "expected_output.txt",
+        "content": "--- Section A: availability ---\nB1 available: True\n--- Section B: member limits ---\nbasic max: 3\ngold max: 10\n--- Section C: reservations ---\nM1 reserved B1: True\nM1 active count: 1\n--- Section D: late fees ---\n1 day late: 0.0\n4 days late (grace=3): 0.5\n5 days late (grace=3): 1.0\n--- Section E: reports ---\ntop 2 popular: ['B2', 'B1']\nM1 summary: {'member_id': 'M1', 'active_count': 2, 'book_ids': ['B1', 'B2']}\n"
       }
     ],
     "test_file": {
       "name": "test_solution.py",
-      "content": "import unittest\nimport datetime\nfrom models import Book, Member, Reservation\nfrom library import Library\nfrom policies import max_books_allowed, late_fee\nfrom reports import popular_books, member_summary\n\n\ndef make_library():\n    lib = Library()\n    lib.add_book(Book('B1', 'Python 101', total_copies=2))\n    lib.add_book(Book('B2', 'Algorithms', total_copies=1))\n    lib.add_book(Book('B3', 'Databases', total_copies=3))\n    lib.add_member(Member('M1', 'Alice', tier='basic'))\n    lib.add_member(Member('M2', 'Bob', tier='gold'))\n    return lib\n\n\n# CHECKPOINT 1\nclass TestBookAvailability(unittest.TestCase):\n    def test_book_available_with_one_copy_left(self):\n        \"\"\"Book with exactly 1 available copy must report available\"\"\"\n        b = Book('B', 'Title', total_copies=1)\n        self.assertTrue(b.is_available())\n\n    def test_basic_member_max_books_is_three(self):\n        \"\"\"basic-tier member should have 3-book limit\"\"\"\n        m = Member('M', 'X', tier='basic')\n        self.assertEqual(max_books_allowed(m), 3)\n\n\n# CHECKPOINT 2\nclass TestReservationFlow(unittest.TestCase):\n    def test_reserve_history_isolated_between_calls(self):\n        \"\"\"history default arg must NOT leak between separate reserve() calls\"\"\"\n        lib = make_library()\n        r1 = lib.reserve('B1', 'M1')\n        r2 = lib.reserve('B3', 'M2')\n        # If mutable default leaks, history list grows across calls.\n        # We assert by checking a fresh instance starts clean.\n        lib2 = Library()\n        lib2.add_book(Book('X', 'X', 1))\n        lib2.add_member(Member('Z', 'Z'))\n        h = []\n        lib2.reserve('X', 'Z', history=h)\n        self.assertEqual(len(h), 1)\n        h2 = []\n        lib2.reserve('X', 'Z', history=h2)  # already reserved → returns None, no append\n        self.assertEqual(len(h2), 0)\n\n    def test_basic_member_blocked_at_limit(self):\n        \"\"\"basic member with 3 active reservations cannot reserve a 4th\"\"\"\n        lib = make_library()\n        for bid in ['B1', 'B3', 'B3']:\n            lib.reserve(bid, 'M1')\n        # B4 has 2 copies so is_available() works even with the boundary bug\n        lib.add_book(Book('B4', 'Extra', total_copies=2))\n        result = lib.reserve('B4', 'M1')\n        self.assertIsNone(result)\n\n\n# CHECKPOINT 3\nclass TestPoliciesAndReports(unittest.TestCase):\n    def test_late_fee_one_day_past_grace(self):\n        \"\"\"One day past grace=3 should charge for exactly that one day (0.50)\"\"\"\n        self.assertAlmostEqual(late_fee(4, grace_period=3), 0.50)\n\n    def test_late_fee_subtracts_grace(self):\n        \"\"\"5 days late with grace=3 should charge 2*0.50 = 1.00, not 5*0.50\"\"\"\n        self.assertAlmostEqual(late_fee(5, grace_period=3), 1.00)\n\n    def test_popular_books_sorted_desc(self):\n        \"\"\"popular_books should return most-reserved first\"\"\"\n        lib = make_library()\n        lib.reserve('B1', 'M1')\n        lib.reserve('B3', 'M1')\n        lib.reserve('B3', 'M2')\n        # B3 has 2 reservations, B1 has 1\n        result = popular_books(lib, top_n=2)\n        self.assertEqual(result[0], 'B3')\n\n    def test_member_summary_returns_dict(self):\n        \"\"\"member_summary must return a dict, not None\"\"\"\n        lib = make_library()\n        lib.reserve('B1', 'M2')\n        result = member_summary(lib, 'M2')\n        self.assertIsNotNone(result)\n        self.assertEqual(result['member_id'], 'M2')\n\n\n# CHECKPOINT 4\nclass TestEdgeCases(unittest.TestCase):\n    def test_member_summary_active_count(self):\n        \"\"\"member_summary active_count must reflect current outstanding holds\"\"\"\n        lib = make_library()\n        lib.reserve('B1', 'M1')\n        lib.reserve('B3', 'M1')\n        result = member_summary(lib, 'M1')\n        self.assertEqual(result['active_count'], 2)\n\n\nif __name__ == '__main__':\n    unittest.main()\n"
+      "content": "import unittest\nimport datetime\nfrom models import Book, Member, Reservation\nfrom library import Library\nfrom policies import max_books_allowed, late_fee\nfrom reports import popular_books, member_summary\n\n\ndef make_library():\n    lib = Library()\n    lib.add_book(Book('B1', 'Python 101', total_copies=2))\n    lib.add_book(Book('B2', 'Algorithms', total_copies=1))\n    lib.add_book(Book('B3', 'Databases', total_copies=3))\n    lib.add_member(Member('M1', 'Alice', tier='basic'))\n    lib.add_member(Member('M2', 'Bob', tier='gold'))\n    return lib\n\n\n# CHECKPOINT 1\nclass TestBookAvailability(unittest.TestCase):\n    def test_book_available_with_one_copy_left(self):\n        \"\"\"Book with exactly 1 available copy must report available\"\"\"\n        b = Book('B', 'Title', total_copies=1)\n        self.assertTrue(b.is_available())\n\n    def test_basic_member_max_books_is_three(self):\n        \"\"\"basic-tier member should have 3-book limit\"\"\"\n        m = Member('M', 'X', tier='basic')\n        self.assertEqual(max_books_allowed(m), 3)\n\n\n# CHECKPOINT 2\nclass TestReservationFlow(unittest.TestCase):\n    def test_reserve_history_isolated_between_calls(self):\n        \"\"\"history default arg must NOT leak between separate reserve() calls\"\"\"\n        lib2 = Library()\n        lib2.add_book(Book('X', 'X', 1))\n        lib2.add_member(Member('Z', 'Z'))\n        h = []\n        lib2.reserve('X', 'Z', history=h)\n        self.assertEqual(len(h), 1)\n        h2 = []\n        lib2.reserve('X', 'Z', history=h2)\n        self.assertEqual(len(h2), 0)\n\n    def test_basic_member_blocked_at_limit(self):\n        \"\"\"basic member with 3 active reservations cannot reserve a 4th\"\"\"\n        lib = make_library()\n        for bid in ['B1', 'B3', 'B3']:\n            lib.reserve(bid, 'M1')\n        lib.add_book(Book('B4', 'Extra', total_copies=2))\n        result = lib.reserve('B4', 'M1')\n        self.assertIsNone(result)\n\n\n# CHECKPOINT 3\nclass TestPoliciesAndReports(unittest.TestCase):\n    def test_late_fee_one_day_past_grace(self):\n        \"\"\"One day past grace=3 should charge for exactly that one day (0.50)\"\"\"\n        self.assertAlmostEqual(late_fee(4, grace_period=3), 0.50)\n\n    def test_late_fee_subtracts_grace(self):\n        \"\"\"5 days late with grace=3 should charge 2*0.50 = 1.00, not 5*0.50\"\"\"\n        self.assertAlmostEqual(late_fee(5, grace_period=3), 1.00)\n\n    def test_popular_books_sorted_desc(self):\n        \"\"\"popular_books should return most-reserved first\"\"\"\n        lib = make_library()\n        lib.reserve('B1', 'M1')\n        lib.reserve('B3', 'M1')\n        lib.reserve('B3', 'M2')\n        result = popular_books(lib, top_n=2)\n        self.assertEqual(result[0], 'B3')\n\n    def test_member_summary_returns_dict(self):\n        \"\"\"member_summary must return a dict, not None\"\"\"\n        lib = make_library()\n        lib.reserve('B1', 'M2')\n        result = member_summary(lib, 'M2')\n        self.assertIsNotNone(result)\n        self.assertEqual(result['member_id'], 'M2')\n\n\n# CHECKPOINT 4\nclass TestEdgeCases(unittest.TestCase):\n    def test_member_summary_active_count(self):\n        \"\"\"member_summary active_count must reflect current outstanding holds\"\"\"\n        lib = make_library()\n        lib.reserve('B1', 'M1')\n        lib.reserve('B3', 'M1')\n        result = member_summary(lib, 'M1')\n        self.assertEqual(result['active_count'], 2)\n\n\nif __name__ == '__main__':\n    unittest.main()\n"
     },
     "bugs": [
       {
         "file": "models.py",
-        "line_hint": 12,
-        "description": "Book.is_available uses > 1 instead of >= 1"
+        "description": "Book availability check off-by-one"
       },
       {
         "file": "policies.py",
-        "line_hint": 3,
-        "description": "max_books_allowed uses 'or' on truthy literal — always returns 10"
+        "description": "Tier policy bug — limit applies to wrong groups"
       },
       {
         "file": "policies.py",
-        "line_hint": 9,
-        "description": "late_fee uses <= grace_period; the boundary day is treated incorrectly"
+        "description": "Late fee math charges too much past the grace window"
       },
       {
         "file": "library.py",
-        "line_hint": 18,
-        "description": "Library.reserve has mutable default arg history=[]"
+        "description": "Reserve function carries state between calls"
       },
       {
         "file": "reports.py",
-        "line_hint": 6,
-        "description": "popular_books sorts ascending — should be descending"
+        "description": "Popular books returned in wrong order"
       },
       {
         "file": "reports.py",
-        "line_hint": 17,
-        "description": "member_summary missing return statement"
+        "description": "Member summary returns the wrong thing"
       }
     ],
     "stubs": [],
@@ -62,25 +64,25 @@
         "id": 1,
         "title": "Orientation",
         "ai_enabled": false,
-        "task": "Run the tests. Fix the bug in Book.is_available (models.py) and the bug in max_books_allowed (policies.py). Do not use the AI assistant."
+        "task": "Open expected_output.txt and run main.py. Compare. Then run the tests. Fix the two bugs in Section A and Section B of main.py output. Do NOT use the AI assistant."
       },
       {
         "id": 2,
         "title": "Reservation Flow",
         "ai_enabled": true,
-        "task": "Fix the mutable-default-argument bug in Library.reserve so each call uses an isolated history list, then verify the basic-tier reservation limit works."
+        "task": "Diagnose why Section C diverges from expected, and fix it. Verify the two reservation-flow tests pass."
       },
       {
         "id": 3,
         "title": "Policies & Reports",
         "ai_enabled": true,
-        "task": "Fix the late-fee boundary bug, the popular_books sort direction, and the missing return in member_summary. Explain each fix in chat."
+        "task": "Fix Sections D and E (late fees, popular books, member summary). Explain each fix in chat."
       },
       {
         "id": 4,
         "title": "Edge Cases",
         "ai_enabled": true,
-        "task": "Add input validation to Library.reserve (reject when book_id or member_id is missing — already partially handled) and Library.return_book. Make sure the gold-tier and active-count tests pass cleanly."
+        "task": "Add input validation. Make sure the member-summary active-count test stays green."
       }
     ]
   },
@@ -90,50 +92,53 @@
     "files": [
       {
         "name": "ticket.py",
-        "content": "class Ticket:\n    def __init__(self, ticket_id, customer_id, priority, subject):\n        self.ticket_id = ticket_id\n        self.customer_id = customer_id\n        self.priority = priority  # 1 (urgent) .. 5 (low)\n        self.subject = subject\n        self.status = 'open'\n        self.assigned_to = None\n        self.events = []\n\n    def assign(self, agent_id):\n        self.assigned_to = agent_id\n        self.events.append(('assigned', agent_id))\n\n    def close(self):\n        # BUG: status should change to 'closed', this is a typo\n        self.status = 'close'\n        self.events.append(('closed',))\n\n    def is_open(self):\n        return self.status == 'open'\n"
+        "content": "class Ticket:\n    def __init__(self, ticket_id, customer_id, priority, subject):\n        self.ticket_id = ticket_id\n        self.customer_id = customer_id\n        self.priority = priority\n        self.subject = subject\n        self.status = 'open'\n        self.assigned_to = None\n        self.events = []\n\n    def assign(self, agent_id):\n        self.assigned_to = agent_id\n        self.events.append(('assigned', agent_id))\n\n    def close(self):\n        self.status = 'close'\n        self.events.append(('closed',))\n\n    def is_open(self):\n        return self.status == 'open'\n"
       },
       {
         "name": "agent.py",
-        "content": "class Agent:\n    def __init__(self, agent_id, name, max_load=5, skills=None):\n        self.agent_id = agent_id\n        self.name = name\n        self.max_load = max_load\n        # BUG: mutable default avoidance is fine but skills=None then leaks if not assigned\n        # Real bug below:\n        self.skills = skills if skills is not None else []\n        self.active_tickets = []\n\n    def can_take(self, ticket):\n        # BUG: should be < max_load, using <= overshoots by one\n        return len(self.active_tickets) <= self.max_load\n\n    def load(self):\n        return len(self.active_tickets)\n"
+        "content": "class Agent:\n    def __init__(self, agent_id, name, max_load=5, skills=None):\n        self.agent_id = agent_id\n        self.name = name\n        self.max_load = max_load\n        self.skills = skills if skills is not None else []\n        self.active_tickets = []\n\n    def can_take(self, ticket):\n        return len(self.active_tickets) <= self.max_load\n\n    def load(self):\n        return len(self.active_tickets)\n"
       },
       {
         "name": "queue.py",
-        "content": "from ticket import Ticket\nfrom agent import Agent\n\n\nclass TicketQueue:\n    def __init__(self):\n        self.tickets = []\n        self.agents = {}\n\n    def submit(self, ticket):\n        self.tickets.append(ticket)\n\n    def register_agent(self, agent):\n        self.agents[agent.agent_id] = agent\n\n    def next_unassigned(self):\n        # BUG: returns LOWEST-priority ticket (highest number) instead of highest (lowest number)\n        unassigned = [t for t in self.tickets if t.assigned_to is None and t.is_open()]\n        if not unassigned:\n            return None\n        return max(unassigned, key=lambda t: t.priority)\n\n    def assign_next(self):\n        ticket = self.next_unassigned()\n        if ticket is None:\n            return None\n        # Find an agent who can take it\n        for agent in self.agents.values():\n            if agent.can_take(ticket):\n                ticket.assign(agent.agent_id)\n                agent.active_tickets.append(ticket.ticket_id)\n                return ticket\n        return None\n"
+        "content": "from ticket import Ticket\nfrom agent import Agent\n\n\nclass TicketQueue:\n    def __init__(self):\n        self.tickets = []\n        self.agents = {}\n\n    def submit(self, ticket):\n        self.tickets.append(ticket)\n\n    def register_agent(self, agent):\n        self.agents[agent.agent_id] = agent\n\n    def next_unassigned(self):\n        unassigned = [t for t in self.tickets if t.assigned_to is None and t.is_open()]\n        if not unassigned:\n            return None\n        return max(unassigned, key=lambda t: t.priority)\n\n    def assign_next(self):\n        ticket = self.next_unassigned()\n        if ticket is None:\n            return None\n        for agent in self.agents.values():\n            if agent.can_take(ticket):\n                ticket.assign(agent.agent_id)\n                agent.active_tickets.append(ticket.ticket_id)\n                return ticket\n        return None\n"
       },
       {
         "name": "reports.py",
-        "content": "from collections import Counter\n\n\ndef agent_load_report(queue):\n    return {\n        agent.agent_id: agent.load()\n        for agent in queue.agents.values()\n    }\n\n\ndef open_ticket_count(queue):\n    # BUG: counts ALL tickets instead of just open ones\n    return len(queue.tickets)\n\n\ndef average_priority(queue):\n    open_tickets = [t for t in queue.tickets if t.is_open()]\n    if not open_tickets:\n        return 0\n    total = sum(t.priority for t in open_tickets)\n    # BUG: integer division truncates; should be float division\n    return total // len(open_tickets)\n"
+        "content": "from collections import Counter\n\n\ndef agent_load_report(queue):\n    return {\n        agent.agent_id: agent.load()\n        for agent in queue.agents.values()\n    }\n\n\ndef open_ticket_count(queue):\n    return len(queue.tickets)\n\n\ndef average_priority(queue):\n    open_tickets = [t for t in queue.tickets if t.is_open()]\n    if not open_tickets:\n        return 0\n    total = sum(t.priority for t in open_tickets)\n    return total // len(open_tickets)\n"
+      },
+      {
+        "name": "main.py",
+        "content": "from ticket import Ticket\nfrom agent import Agent\nfrom queue import TicketQueue\nfrom reports import agent_load_report, open_ticket_count, average_priority\n\n\ndef run():\n    q = TicketQueue()\n    q.register_agent(Agent('A1', 'Alice', max_load=1))\n    q.register_agent(Agent('A2', 'Bob', max_load=3))\n    q.submit(Ticket('T1', 'C1', priority=3, subject='font bug'))\n    q.submit(Ticket('T2', 'C2', priority=1, subject='payment broken'))\n    q.submit(Ticket('T3', 'C3', priority=5, subject='typo'))\n\n    # Picking the next ticket\n    print('--- Section A: picking next ---')\n    nxt = q.next_unassigned()\n    print('next ticket id:', nxt.ticket_id)\n    print('next ticket priority:', nxt.priority)\n\n    # Closing semantics\n    print('--- Section B: closing ---')\n    t = Ticket('X1', 'C', 1, 'demo')\n    t.close()\n    print('closed status:', t.status)\n    print('is open after close:', t.is_open())\n\n    # Assignment distribution\n    print('--- Section C: assignment distribution ---')\n    q.assign_next()\n    q.assign_next()\n    q.assign_next()\n    report = agent_load_report(q)\n    print('Alice load:', report['A1'])\n    print('Bob load:', report['A2'])\n\n    # Open count after close\n    print('--- Section D: open ticket count ---')\n    q2 = TicketQueue()\n    q2.submit(Ticket('U1', 'C', 1, 'a'))\n    q2.submit(Ticket('U2', 'C', 2, 'b'))\n    q2.tickets[0].close()\n    print('open count (1 closed of 2):', open_ticket_count(q2))\n\n    # Numeric mean\n    print('--- Section E: average priority ---')\n    q3 = TicketQueue()\n    q3.submit(Ticket('V1', 'C', 1, 'a'))\n    q3.submit(Ticket('V2', 'C', 2, 'b'))\n    avg = average_priority(q3)\n    print('mean of [1, 2]:', avg)\n    print('type is float:', isinstance(avg, float))\n\n\nif __name__ == '__main__':\n    run()\n"
+      },
+      {
+        "name": "expected_output.txt",
+        "content": "--- Section A: picking next ---\nnext ticket id: T2\nnext ticket priority: 1\n--- Section B: closing ---\nclosed status: closed\nis open after close: False\n--- Section C: assignment distribution ---\nAlice load: 1\nBob load: 2\n--- Section D: open ticket count ---\nopen count (1 closed of 2): 1\n--- Section E: average priority ---\nmean of [1, 2]: 1.5\ntype is float: True\n"
       }
     ],
     "test_file": {
       "name": "test_solution.py",
-      "content": "import unittest\nfrom ticket import Ticket\nfrom agent import Agent\nfrom queue import TicketQueue\nfrom reports import agent_load_report, open_ticket_count, average_priority\n\n\ndef setup_queue():\n    q = TicketQueue()\n    q.register_agent(Agent('A1', 'Alice', max_load=2))\n    q.register_agent(Agent('A2', 'Bob', max_load=3))\n    q.submit(Ticket('T1', 'C1', priority=3, subject='font bug'))\n    q.submit(Ticket('T2', 'C2', priority=1, subject='payment broken'))\n    q.submit(Ticket('T3', 'C3', priority=5, subject='typo'))\n    return q\n\n\n# CHECKPOINT 1\nclass TestTicketBasics(unittest.TestCase):\n    def test_ticket_close_sets_status(self):\n        \"\"\"Ticket.close should set status to 'closed' (not a typo'd value)\"\"\"\n        t = Ticket('X', 'C', 1, 'hi')\n        t.close()\n        self.assertEqual(t.status, 'closed')\n\n    def test_closed_ticket_records_correct_event(self):\n        \"\"\"Closing a ticket must store the literal string 'closed' in events\"\"\"\n        t = Ticket('X', 'C', 1, 'hi')\n        t.close()\n        # Verifies status is exactly 'closed' — the typo bug stores 'close'\n        self.assertEqual(t.status, 'closed')\n        # And a closed ticket must not appear as open\n        self.assertFalse(t.is_open())\n\n    def test_agent_can_take_at_capacity(self):\n        \"\"\"Agent at max_load must NOT accept another ticket\"\"\"\n        a = Agent('A', 'X', max_load=2)\n        a.active_tickets = ['t1', 't2']\n        self.assertFalse(a.can_take(Ticket('T', 'C', 1, 'x')))\n\n\n# CHECKPOINT 2\nclass TestQueueOrdering(unittest.TestCase):\n    def test_next_unassigned_returns_urgent_first(self):\n        \"\"\"next_unassigned must return the lowest-numbered priority (most urgent)\"\"\"\n        q = setup_queue()\n        t = q.next_unassigned()\n        self.assertEqual(t.ticket_id, 'T2')\n\n    def test_assign_next_chooses_urgent(self):\n        \"\"\"assign_next must pick the urgent ticket and assign an agent\"\"\"\n        q = setup_queue()\n        assigned = q.assign_next()\n        self.assertIsNotNone(assigned)\n        self.assertEqual(assigned.ticket_id, 'T2')\n        self.assertIsNotNone(assigned.assigned_to)\n\n\n# CHECKPOINT 3\nclass TestReports(unittest.TestCase):\n    def test_open_ticket_count_excludes_closed(self):\n        \"\"\"open_ticket_count must NOT include closed tickets\"\"\"\n        q = setup_queue()\n        q.tickets[0].close()  # close T1\n        self.assertEqual(open_ticket_count(q), 2)\n\n    def test_average_priority_returns_float_type(self):\n        \"\"\"average_priority must return a float type, not an int (floor-divided)\"\"\"\n        q = setup_queue()\n        result = average_priority(q)\n        self.assertIsInstance(result, float)\n\n    def test_average_priority_fractional(self):\n        \"\"\"Mean of [1,2] should be 1.5, not 1\"\"\"\n        q = TicketQueue()\n        q.submit(Ticket('T1', 'C', priority=1, subject='a'))\n        q.submit(Ticket('T2', 'C', priority=2, subject='b'))\n        self.assertAlmostEqual(average_priority(q), 1.5)\n\n\n# CHECKPOINT 4\nclass TestIntegration(unittest.TestCase):\n    def test_full_assignment_cycle(self):\n        \"\"\"A submitted urgent ticket should be auto-assignable and counted as open\"\"\"\n        q = setup_queue()\n        q.assign_next()\n        # T2 was urgent, should be assigned now\n        urgent = next(t for t in q.tickets if t.ticket_id == 'T2')\n        self.assertIsNotNone(urgent.assigned_to)\n        # Open count still 3\n        self.assertEqual(open_ticket_count(q), 3)\n\n    def test_agent_load_report_respects_max_load(self):\n        \"\"\"After 3 assignments to a queue where Alice can take 2 and Bob can take 3,\n        Bob must get at least 1 ticket once Alice is full.\"\"\"\n        q = setup_queue()\n        # Add a 4th ticket so we have 4 to distribute\n        q.submit(Ticket('T4', 'C4', priority=2, subject='login broken'))\n        for _ in range(3):\n            q.assign_next()\n        report = agent_load_report(q)\n        # Bug (<=) allows Alice to hold 3 tickets; fix (<) caps her at 2 so Bob gets at least 1\n        self.assertGreaterEqual(report['A2'], 1)\n\n\nif __name__ == '__main__':\n    unittest.main()\n"
+      "content": "import unittest\nfrom ticket import Ticket\nfrom agent import Agent\nfrom queue import TicketQueue\nfrom reports import agent_load_report, open_ticket_count, average_priority\n\n\ndef setup_queue():\n    q = TicketQueue()\n    q.register_agent(Agent('A1', 'Alice', max_load=2))\n    q.register_agent(Agent('A2', 'Bob', max_load=3))\n    q.submit(Ticket('T1', 'C1', priority=3, subject='font bug'))\n    q.submit(Ticket('T2', 'C2', priority=1, subject='payment broken'))\n    q.submit(Ticket('T3', 'C3', priority=5, subject='typo'))\n    return q\n\n\n# CHECKPOINT 1\nclass TestTicketBasics(unittest.TestCase):\n    def test_ticket_close_sets_status(self):\n        \"\"\"Ticket.close should set status to 'closed' (not a typo'd value)\"\"\"\n        t = Ticket('X', 'C', 1, 'hi')\n        t.close()\n        self.assertEqual(t.status, 'closed')\n\n    def test_closed_ticket_records_correct_event(self):\n        \"\"\"Closing a ticket must store the literal string 'closed' in events\"\"\"\n        t = Ticket('X', 'C', 1, 'hi')\n        t.close()\n        self.assertEqual(t.status, 'closed')\n        self.assertFalse(t.is_open())\n\n    def test_agent_can_take_at_capacity(self):\n        \"\"\"Agent at max_load must NOT accept another ticket\"\"\"\n        a = Agent('A', 'X', max_load=2)\n        a.active_tickets = ['t1', 't2']\n        self.assertFalse(a.can_take(Ticket('T', 'C', 1, 'x')))\n\n\n# CHECKPOINT 2\nclass TestQueueOrdering(unittest.TestCase):\n    def test_next_unassigned_returns_urgent_first(self):\n        \"\"\"next_unassigned must return the lowest-numbered priority (most urgent)\"\"\"\n        q = setup_queue()\n        t = q.next_unassigned()\n        self.assertEqual(t.ticket_id, 'T2')\n\n    def test_assign_next_chooses_urgent(self):\n        \"\"\"assign_next must pick the urgent ticket and assign an agent\"\"\"\n        q = setup_queue()\n        assigned = q.assign_next()\n        self.assertIsNotNone(assigned)\n        self.assertEqual(assigned.ticket_id, 'T2')\n        self.assertIsNotNone(assigned.assigned_to)\n\n\n# CHECKPOINT 3\nclass TestReports(unittest.TestCase):\n    def test_open_ticket_count_excludes_closed(self):\n        \"\"\"open_ticket_count must NOT include closed tickets\"\"\"\n        q = setup_queue()\n        q.tickets[0].close()\n        self.assertEqual(open_ticket_count(q), 2)\n\n    def test_average_priority_returns_float_type(self):\n        \"\"\"average_priority must return a float type, not an int (floor-divided)\"\"\"\n        q = setup_queue()\n        result = average_priority(q)\n        self.assertIsInstance(result, float)\n\n    def test_average_priority_fractional(self):\n        \"\"\"Mean of [1,2] should be 1.5, not 1\"\"\"\n        q = TicketQueue()\n        q.submit(Ticket('T1', 'C', priority=1, subject='a'))\n        q.submit(Ticket('T2', 'C', priority=2, subject='b'))\n        self.assertAlmostEqual(average_priority(q), 1.5)\n\n\n# CHECKPOINT 4\nclass TestIntegration(unittest.TestCase):\n    def test_full_assignment_cycle(self):\n        \"\"\"A submitted urgent ticket should be auto-assignable and counted as open\"\"\"\n        q = setup_queue()\n        q.assign_next()\n        urgent = next(t for t in q.tickets if t.ticket_id == 'T2')\n        self.assertIsNotNone(urgent.assigned_to)\n        self.assertEqual(open_ticket_count(q), 3)\n\n    def test_agent_load_report_respects_max_load(self):\n        \"\"\"After 3 assignments to a queue where Alice can take 2 and Bob can take 3,\n        Bob must get at least 1 ticket once Alice is full.\"\"\"\n        q = setup_queue()\n        q.submit(Ticket('T4', 'C4', priority=2, subject='login broken'))\n        for _ in range(3):\n            q.assign_next()\n        report = agent_load_report(q)\n        self.assertGreaterEqual(report['A2'], 1)\n\n\nif __name__ == '__main__':\n    unittest.main()\n"
     },
     "bugs": [
       {
         "file": "ticket.py",
-        "line_hint": 15,
-        "description": "Ticket.close sets status to 'close' instead of 'closed'"
+        "description": "Ticket close stores the wrong status value"
       },
       {
         "file": "agent.py",
-        "line_hint": 12,
-        "description": "Agent.can_take uses <= max_load — off-by-one allowing capacity+1"
+        "description": "Agent capacity check off-by-one"
       },
       {
         "file": "queue.py",
-        "line_hint": 19,
-        "description": "next_unassigned uses max() on priority, returning lowest-urgency ticket"
+        "description": "Wrong end of the priority queue is picked"
       },
       {
         "file": "reports.py",
-        "line_hint": 11,
-        "description": "open_ticket_count returns total ticket count instead of filtering open ones"
+        "description": "open_ticket_count includes closed tickets"
       },
       {
         "file": "reports.py",
-        "line_hint": 19,
-        "description": "average_priority uses // (integer division) instead of /"
+        "description": "average_priority loses fractional values"
       }
     ],
     "stubs": [],
@@ -142,25 +147,25 @@
         "id": 1,
         "title": "Orientation",
         "ai_enabled": false,
-        "task": "Run the tests. Fix Ticket.close (ticket.py) and Agent.can_take (agent.py) without the AI assistant."
+        "task": "Open expected_output.txt and run main.py to compare. Fix the bugs surfacing in Section A (queue picking) and Section B (closing). Do NOT use the AI assistant."
       },
       {
         "id": 2,
         "title": "Queue Ordering",
         "ai_enabled": true,
-        "task": "Fix TicketQueue.next_unassigned so it returns the most urgent (lowest priority number) ticket. Verify both queue tests pass."
+        "task": "Investigate the assignment-distribution gap in Section C and the capacity check that drives it."
       },
       {
         "id": 3,
         "title": "Reports",
         "ai_enabled": true,
-        "task": "Fix open_ticket_count and average_priority in reports.py. Explain why integer division is the wrong tool here."
+        "task": "Fix Sections D and E in reports.py. Explain why integer division is the wrong tool here."
       },
       {
         "id": 4,
         "title": "Edge Cases",
         "ai_enabled": true,
-        "task": "Add an integration check: when no agents have capacity, assign_next should return None gracefully. Make sure the two integration tests stay green."
+        "task": "Confirm assign_next returns None gracefully when no agent has capacity. Keep all integration tests green."
       }
     ]
   }

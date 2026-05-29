@@ -8,10 +8,13 @@ export default function Navbar({
   checkpoints,
   currentCheckpointIdx,
   onRunTests,
+  onRunCode,
   onNewProblem,
   onHistory,
   runningTests,
+  runningCode,
   pyodideReady,
+  hasMain,
 }) {
   const mode = MODES[modeId];
   const a = accentClasses(mode.accent);
@@ -76,9 +79,21 @@ export default function Navbar({
         New Problem
       </button>
 
+      {hasMain && (
+        <button
+          onClick={onRunCode}
+          disabled={runningCode || runningTests || !pyodideReady}
+          className="px-3 py-1.5 bg-bg-700 hover:bg-bg-600 rounded text-xs font-medium disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
+          title={!pyodideReady ? 'Loading Python runtime...' : 'Run main.py'}
+        >
+          {runningCode ? <span className="spinner w-3 h-3" /> : '▶'}
+          Run
+        </button>
+      )}
+
       <button
         onClick={onRunTests}
-        disabled={runningTests || !pyodideReady}
+        disabled={runningTests || runningCode || !pyodideReady}
         className={`px-3 py-1.5 ${a.bg} ${a.hover} text-white rounded text-xs font-medium disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2`}
         title={!pyodideReady ? 'Loading Python runtime...' : ''}
       >

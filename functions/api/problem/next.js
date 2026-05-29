@@ -22,7 +22,7 @@ const MAX_OUTPUT_TOKENS = 8192;
 const MODE_CONFIG = {
   bug_hunt: {
     seedPath: '/seed/bug_hunt.json',
-    prompt: (hint) => `Generate a realistic multi-file Python backend codebase simulating a ${hint || 'random small backend'} application. Use 4-5 files. The code should look like something a junior engineer wrote — real logic, not toy examples. Seed exactly 5 bugs spread across different files. Bug types to use: off-by-one errors, missing edge case handling, wrong return values, subtle logic errors, mutable default argument, missing error handling, incorrect boolean conditions, wrong comparison operators. Do not comment where the bugs are. Also generate a unittest test file with 9-10 tests.\n\nCRITICAL TEST DESIGN RULE:\n- Every test in the suite MUST fail on the day-0 buggy code.\n- Each test must exercise a code path that is broken by at least one of the seeded bugs.\n- Do NOT write tests that verify already-working behavior — those would pass before any fix and are useless to the candidate.\n- For each bug, pick the test data carefully so the buggy result differs from the correct result. Boundary conditions: include the exact boundary value (e.g. if the bug is < vs <=, the test must hit the boundary).\n\nIMPORTANT CONSTRAINTS:\n- Only use these Python stdlib modules: os, sys, io, json, datetime, collections, itertools, functools, re, math, unittest\n- No file I/O, no network calls, no third-party packages\n- Tests must import from generated files using plain top-level imports\n- Each file is a single module — no packages, no subdirectories\n- Return ONLY valid JSON. No markdown, no backticks, no preamble.\n\nSchema:\n{\n  "domain": "...",\n  "files": [{"name": "...", "content": "..."}],\n  "test_file": {"name": "test_solution.py", "content": "..."},\n  "bugs": [{"file": "...", "line_hint": 0, "description": "..."}],\n  "checkpoints": [\n    {"id": 1, "title": "Orientation", "ai_enabled": false, "task": "Run the tests. Read the output carefully. Find and fix bugs #1 and #2 without using the AI assistant."},\n    {"id": 2, "title": "Feature Extension", "ai_enabled": true, "task": "Implement a new feature using existing patterns. Describe the feature concretely tied to the domain."},\n    {"id": 3, "title": "Optimization", "ai_enabled": true, "task": "Fix the remaining bugs and explain each fix in the chat."},\n    {"id": 4, "title": "Edge Cases", "ai_enabled": true, "task": "Add input validation and error handling to the public functions."}\n  ],\n  "stubs": []\n}`,
+    prompt: (hint) => `Generate a realistic multi-file Python backend codebase simulating a ${hint || 'random small backend'} application. Use 4-5 source files. The code should look like something a junior engineer wrote — real logic, not toy examples. Seed 5-6 bugs spread across different files. Bug types: off-by-one errors, missing edge case handling, wrong return values, subtle logic errors, mutable default argument, missing error handling, incorrect boolean conditions, wrong comparison operators.\n\nCRITICAL CODE HYGIENE:\n- NO comments anywhere in the code that reveal a bug exists or hint at the fix. No "# BUG:", "# FIXME:", "# TODO: bug", "# wrong", "# should be", or any phrasing that points the candidate at a problem area. The source must read like normal junior-engineer code.\n- It is fine to have ordinary code comments explaining what a function does, just nothing about the bugs.\n\nALSO INCLUDE TWO EXTRA FILES in the files array:\n- main.py: A runnable script that exercises the buggy code paths with sectioned print() output, like:\n    print('--- Section A: <name> ---')\n    print('label:', value)\n  Each section should call the functions affected by 1-2 specific bugs so the candidate can diff against expected. End with: if __name__ == '__main__': run()\n- expected_output.txt: The EXACT stdout that main.py would produce IF the bugs were fixed. Trailing newline only — no commentary.\n\nIMPORTANT: The expected_output.txt must match what fixed main.py would print exactly: same section headers, same labels, same numeric formatting (round() where needed for floats so output is stable). Pick demo values that make the buggy vs correct output observably different in stdout.\n\nCRITICAL TEST DESIGN RULE:\n- Every test in the unittest suite MUST fail on the day-0 buggy code.\n- Each test must exercise a code path broken by at least one bug.\n- Do NOT write tests that verify already-working behavior.\n- For boundary bugs, include the exact boundary value in the test data.\n\nGenerate a unittest test_solution.py with 9-10 tests.\n\nCONSTRAINTS:\n- Only use stdlib: os, sys, io, json, datetime, collections, itertools, functools, re, math, unittest\n- No file I/O, no network calls, no third-party packages\n- Plain top-level imports, no packages\n- Return ONLY valid JSON. No markdown, no backticks, no preamble.\n\nSchema:\n{\n  "domain": "...",\n  "files": [{"name": "...", "content": "..."}],\n  "test_file": {"name": "test_solution.py", "content": "..."},\n  "bugs": [{"file": "...", "description": "..."}],\n  "checkpoints": [\n    {"id": 1, "title": "Orientation", "ai_enabled": false, "task": "Open expected_output.txt and run main.py to diff. Fix the two bugs surfacing in Section A and Section B. Do NOT use the AI assistant."},\n    {"id": 2, "title": "Diagnose", "ai_enabled": true, "task": "Investigate the next diverging section in main.py and fix it."},\n    {"id": 3, "title": "Remaining Bugs", "ai_enabled": true, "task": "Fix any remaining bugs revealed by main.py and the tests. Explain each fix in chat."},\n    {"id": 4, "title": "Edge Cases", "ai_enabled": true, "task": "Add input validation. Keep all tests green."}\n  ],\n  "stubs": []\n}`,
   },
   feature: {
     seedPath: '/seed/feature.json',
@@ -30,7 +30,7 @@ const MODE_CONFIG = {
   },
   debug: {
     seedPath: '/seed/debug.json',
-    prompt: (hint) => `Generate a realistic multi-file Python codebase for a ${hint || 'data processing'} application with 5-6 files. The codebase must run without raising exceptions on the happy path but contain 4-5 bugs that produce silently wrong output — wrong aggregations, dropped records, off-by-one time windows, stale results, wrong sort order, incorrect calculations. Each bug must be in a different file. No bug should cause an exception. The bugs must be subtle. Also generate a unittest test file with 9-10 tests.\n\nCRITICAL TEST DESIGN RULE:\n- Every test in the suite MUST fail on the day-0 buggy code.\n- For each test, calculate the buggy result and the correct result with pencil-and-paper. They must DIFFER. Reject any test where the buggy result equals the correct result by accident.\n- For boundary bugs (< vs <=): the test data must include the exact boundary value.\n- For integer-division bugs (// instead of /): the test must use values where // truncates a non-integer (e.g. c_to_f(37): 37*9=333, 333//5=66 vs 333/5=66.6, differs after +32).\n- For string-comparison bugs (str(a) >= str(b)): use values where lexical and numeric comparisons disagree (e.g. '9.5' vs '10').\n- For wrong-aggregation bugs: use unequal bucket sizes so average-of-averages diverges from average-of-all.\n\nBug types to include: wrong aggregation logic, operator precedence issue without parens, boundary condition using < instead of <=, a function that mutates and returns the wrong variable, a string/type coercion bug that produces wrong comparison results.\n\nIMPORTANT CONSTRAINTS:\n- Only use these Python stdlib modules: os, sys, io, json, datetime, collections, itertools, functools, re, math, unittest\n- No file I/O, no network calls, no third-party packages\n- Tests must import from generated files using plain top-level imports\n- Each file is a single module — no packages, no subdirectories\n- Return ONLY valid JSON. No markdown, no backticks, no preamble.\n\nSchema:\n{\n  "domain": "...",\n  "files": [{"name": "...", "content": "..."}],\n  "test_file": {"name": "test_solution.py", "content": "..."},\n  "bugs": [{"file": "...", "line_hint": 0, "description": "...", "why_subtle": "...", "prevention": "..."}],\n  "checkpoints": [\n    {"id": 1, "title": "Reproduce", "ai_enabled": false, "task": "Run the full test suite. For each failing test, add a comment in the relevant file identifying which function you think is responsible and why. Annotate at least 4 of the bugs before proceeding."},\n    {"id": 2, "title": "Isolate", "ai_enabled": true, "task": "Using the AI as a sounding board, narrow down the exact lines causing bugs #1, #2, and #3. Explain your reasoning in chat for each one."},\n    {"id": 3, "title": "Fix & Verify", "ai_enabled": true, "task": "Patch every bug. Run tests after each individual fix. All tests must pass."},\n    {"id": 4, "title": "Post-mortem", "ai_enabled": true, "task": "In the chat, explain each bug: root cause, why it was hard to spot, and how you would prevent it in production."}\n  ],\n  "stubs": []\n}`,
+    prompt: (hint) => `Generate a realistic multi-file Python codebase for a ${hint || 'data processing'} application with 5-6 source files. The codebase must run without raising exceptions on the happy path but contain 4-5 bugs producing silently wrong output — wrong aggregations, dropped records, off-by-one time windows, stale results, wrong sort order, incorrect calculations. Each bug in a different file. No bug causes an exception.\n\nCRITICAL CODE HYGIENE:\n- NO comments anywhere in the code that reveal a bug or hint at the fix. No "# BUG:", "# (silent)", "# wrong", "# should be", "# Real bug below", or any phrasing that highlights a problem area. The source must read like normal junior-engineer code.\n- It is fine to have ordinary code comments explaining behavior, just nothing about the bugs.\n\nALSO INCLUDE TWO EXTRA FILES in the files array:\n- main.py: A runnable script that exercises the buggy code paths with sectioned print() output, like:\n    print('--- Section A: <name> ---')\n    print('label:', value)\n  Each section should call the functions affected by specific bugs so the candidate can diff against expected. End with: if __name__ == '__main__': run()\n- expected_output.txt: The EXACT stdout main.py would produce IF the bugs were fixed. Trailing newline only — no commentary.\n\nIMPORTANT: expected_output.txt must match what fixed main.py prints exactly: same section headers, same labels, same numeric formatting (use round() in main.py for floats so the output is stable). Pick demo values where the buggy vs correct output is clearly different in stdout.\n\nCRITICAL TEST DESIGN RULE:\n- Every test in the unittest suite MUST fail on the day-0 buggy code with WRONG VALUES (not exceptions).\n- For each test, calculate buggy result vs correct result. They must DIFFER. Reject any test where they coincide by accident.\n- For boundary bugs (< vs <=): test data must include the exact boundary.\n- For integer-division bugs (// instead of /): use values where // truncates a non-integer.\n- For string-comparison bugs: use values where lexical and numeric comparisons disagree (e.g. '9.5' vs '10').\n- For wrong-aggregation bugs: use unequal bucket sizes so average-of-averages diverges from average-of-all.\n\nBug types to include: wrong aggregation logic, operator precedence issue, < vs <= boundary, function that mutates and returns wrong variable, string/type coercion in comparisons.\n\nGenerate a unittest test_solution.py with 9-10 tests.\n\nCONSTRAINTS:\n- Only use stdlib: os, sys, io, json, datetime, collections, itertools, functools, re, math, unittest\n- No file I/O, no network calls, no third-party packages\n- Plain top-level imports, no packages\n- Return ONLY valid JSON. No markdown, no backticks, no preamble.\n\nSchema:\n{\n  "domain": "...",\n  "files": [{"name": "...", "content": "..."}],\n  "test_file": {"name": "test_solution.py", "content": "..."},\n  "bugs": [{"file": "...", "description": "...", "why_subtle": "...", "prevention": "..."}],\n  "checkpoints": [\n    {"id": 1, "title": "Reproduce", "ai_enabled": false, "task": "Run main.py and diff vs expected_output.txt. For each diverging section, add a comment in the responsible file with your hypothesis. Do NOT use the AI assistant."},\n    {"id": 2, "title": "Isolate", "ai_enabled": true, "task": "Investigate the first two diverging sections via chat. Verify hypotheses by reading code."},\n    {"id": 3, "title": "Fix & Verify", "ai_enabled": true, "task": "Patch every bug one at a time. Re-run main.py and the tests after each fix."},\n    {"id": 4, "title": "Post-mortem", "ai_enabled": true, "task": "In the chat: explain each bug — root cause, why it was hard to spot, and how to prevent it in code review."}\n  ],\n  "stubs": []\n}`,
   },
 };
 
@@ -207,8 +207,84 @@ async function generateProblem(mode, hint, env) {
   const parsed = extractJSON(content);
   if (!parsed) {
     console.error('[generateProblem] JSON parse failed. First 300 chars of content:', content.slice(0, 300));
+    return null;
   }
-  return parsed;
+  // Validate + sanitize before persisting
+  const validation = validateProblem(parsed, mode);
+  if (!validation.ok) {
+    console.warn(`[generateProblem] validation failed (${validation.reason}) — falling back to replay`);
+    return null;
+  }
+  return validation.problem;
+}
+
+/**
+ * Returns { ok: boolean, reason?, problem? }.
+ * Three layers:
+ *  1. Structural — files array, test_file, 4 checkpoints. Hard reject.
+ *  2. Required-file — main.py + expected_output.txt for bug_hunt/debug. Hard reject.
+ *  3. Comment hygiene — strip lines from .py source that reveal bugs.
+ *     If after stripping the line still mentions a bug, hard reject (defensive).
+ */
+function validateProblem(problem, mode) {
+  // Layer 1: structural
+  if (!problem || typeof problem !== 'object') return { ok: false, reason: 'not-an-object' };
+  if (!Array.isArray(problem.files) || problem.files.length === 0)
+    return { ok: false, reason: 'no-files-array' };
+  for (const f of problem.files) {
+    if (!f || typeof f.name !== 'string' || typeof f.content !== 'string')
+      return { ok: false, reason: 'malformed-file-entry' };
+  }
+  if (!problem.test_file || typeof problem.test_file.name !== 'string' || typeof problem.test_file.content !== 'string')
+    return { ok: false, reason: 'missing-test_file' };
+  if (!Array.isArray(problem.checkpoints) || problem.checkpoints.length < 4)
+    return { ok: false, reason: 'need-4-checkpoints' };
+
+  // Layer 2: bug_hunt + debug must ship a demo + expected output
+  if (mode === 'bug_hunt' || mode === 'debug') {
+    const fileNames = new Set(problem.files.map((f) => f.name));
+    if (!fileNames.has('main.py')) return { ok: false, reason: 'missing-main.py' };
+    if (!fileNames.has('expected_output.txt'))
+      return { ok: false, reason: 'missing-expected_output.txt' };
+    // expected_output.txt content must not be empty
+    const expected = problem.files.find((f) => f.name === 'expected_output.txt');
+    if (!expected.content || expected.content.trim().length < 5)
+      return { ok: false, reason: 'expected_output-empty' };
+  }
+
+  // Layer 3: comment hygiene on Python source. Strip bug-revealing comments;
+  // hard-reject if the model put bug-pointers in code (not just comments).
+  // We scan only .py files; expected_output.txt and test_solution.py are skipped
+  // because tests legitimately document what's being verified.
+  const revealComment = /^\s*#.*\b(BUG|FIXME|HACK|XXX|wrong|should be|off[-\s]?by[-\s]?one|silent bug|missing return|never increments|always returns|mutable default)\b/i;
+  // No word boundary — catches XXX_FIXME, FIXME123 etc. Case-sensitive uppercase
+  // is unlikely to appear in legitimate identifiers (debug_log, bug_count are lower-case).
+  const revealCodeNonComment = /(BUG|FIXME|XXX)/;
+
+  for (const f of problem.files) {
+    if (!f.name.endsWith('.py')) continue;
+    if (f.name === 'test_solution.py') continue;
+    const cleaned = [];
+    let stripped = 0;
+    for (const line of f.content.split('\n')) {
+      if (revealComment.test(line)) {
+        stripped++;
+        continue; // drop the offending comment
+      }
+      // Non-comment code containing BUG/FIXME tokens is too risky — reject the whole gen
+      const codeOnly = line.replace(/#.*$/, '');
+      if (revealCodeNonComment.test(codeOnly)) {
+        return { ok: false, reason: `non-comment-reveal-in-${f.name}` };
+      }
+      cleaned.push(line);
+    }
+    if (stripped > 0) {
+      console.log(`[generateProblem] stripped ${stripped} bug-revealing comment(s) from ${f.name}`);
+      f.content = cleaned.join('\n');
+    }
+  }
+
+  return { ok: true, problem };
 }
 
 function extractJSON(text) {

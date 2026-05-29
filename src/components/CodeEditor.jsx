@@ -7,10 +7,12 @@ import { bracketMatching, indentOnInput, foldGutter } from '@codemirror/language
 import { defaultKeymap, history, historyKeymap, indentWithTab } from '@codemirror/commands';
 import { closeBrackets, closeBracketsKeymap, autocompletion, completionKeymap } from '@codemirror/autocomplete';
 
-export default function CodeEditor({ files, activeFile, onChange, onTabPick, dirtyFiles }) {
+export default function CodeEditor({ files, activeFile, onChange, onTabPick, dirtyFiles, onSave }) {
   const wrapRef = useRef(null);
   const viewRef = useRef(null);
   const fileRef = useRef(activeFile);
+  const onSaveRef = useRef(onSave);
+  useEffect(() => { onSaveRef.current = onSave; }, [onSave]);
 
   // Track active file so the update listener uses the latest value
   useEffect(() => {
@@ -36,6 +38,16 @@ export default function CodeEditor({ files, activeFile, onChange, onTabPick, dir
         oneDark,
         autocompletion({ activateOnTyping: true }),
         keymap.of([
+          // Cmd+S / Ctrl+S — commit + show toast. Returning true prevents the browser
+          // save-page dialog from firing.
+          {
+            key: 'Mod-s',
+            preventDefault: true,
+            run: () => {
+              if (onSaveRef.current) onSaveRef.current(fileRef.current);
+              return true;
+            },
+          },
           ...defaultKeymap,
           ...historyKeymap,
           ...closeBracketsKeymap,

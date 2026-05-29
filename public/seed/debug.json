@@ -5,66 +5,53 @@
     "files": [
       {
         "name": "station.py",
-        "content": "class Station:\n    def __init__(self, station_id, name, lat, lon):\n        self.station_id = station_id\n        self.name = name\n        self.lat = lat\n        self.lon = lon\n        self.readings = []\n\n    def add_reading(self, reading):\n        self.readings.append(reading)\n\n\nclass Reading:\n    def __init__(self, ts, temp_c, humidity, wind_kph):\n        self.ts = ts  # datetime.datetime\n        self.temp_c = temp_c\n        self.humidity = humidity\n        self.wind_kph = wind_kph\n"
+        "content": "class Station:\n    def __init__(self, station_id, name, lat, lon):\n        self.station_id = station_id\n        self.name = name\n        self.lat = lat\n        self.lon = lon\n        self.readings = []\n\n    def add_reading(self, reading):\n        self.readings.append(reading)\n\n\nclass Reading:\n    def __init__(self, ts, temp_c, humidity, wind_kph):\n        self.ts = ts\n        self.temp_c = temp_c\n        self.humidity = humidity\n        self.wind_kph = wind_kph\n"
       },
       {
         "name": "aggregator.py",
-        "content": "from collections import defaultdict\n\n\ndef hourly_averages(station):\n    buckets = defaultdict(list)\n    for r in station.readings:\n        key = (r.ts.year, r.ts.month, r.ts.day, r.ts.hour)\n        buckets[key].append(r.temp_c)\n\n    result = {}\n    for key, temps in buckets.items():\n        # BUG (silent): divides by total readings rather than the bucket size,\n        # collapsing hourly averages toward the global mean.\n        result[key] = sum(temps) / len(station.readings)\n    return result\n\n\ndef daily_max(station):\n    buckets = defaultdict(list)\n    for r in station.readings:\n        key = (r.ts.year, r.ts.month, r.ts.day)\n        buckets[key].append(r.temp_c)\n    return {k: max(v) for k, v in buckets.items()}\n"
+        "content": "from collections import defaultdict\n\n\ndef hourly_averages(station):\n    buckets = defaultdict(list)\n    for r in station.readings:\n        key = (r.ts.year, r.ts.month, r.ts.day, r.ts.hour)\n        buckets[key].append(r.temp_c)\n\n    result = {}\n    for key, temps in buckets.items():\n        result[key] = sum(temps) / len(station.readings)\n    return result\n\n\ndef daily_max(station):\n    buckets = defaultdict(list)\n    for r in station.readings:\n        key = (r.ts.year, r.ts.month, r.ts.day)\n        buckets[key].append(r.temp_c)\n    return {k: max(v) for k, v in buckets.items()}\n"
       },
       {
         "name": "alerts.py",
-        "content": "def heat_alerts(readings, threshold_c=30.0):\n    # BUG (silent): uses > threshold; readings exactly at the threshold should also trigger an alert.\n    return [r for r in readings if r.temp_c > threshold_c]\n\n\ndef humidity_alerts(readings, max_humidity=85):\n    return [r for r in readings if r.humidity > max_humidity]\n\n\ndef wind_alerts(readings, max_kph=60):\n    return [r for r in readings if r.wind_kph >= max_kph]\n"
+        "content": "def heat_alerts(readings, threshold_c=30.0):\n    return [r for r in readings if r.temp_c > threshold_c]\n\n\ndef humidity_alerts(readings, max_humidity=85):\n    return [r for r in readings if r.humidity > max_humidity]\n\n\ndef wind_alerts(readings, max_kph=60):\n    return [r for r in readings if r.wind_kph >= max_kph]\n"
       },
       {
         "name": "trends.py",
-        "content": "def trailing_average(values, window):\n    if window <= 0 or not values:\n        return []\n    result = []\n    for i in range(len(values)):\n        start = max(0, i - window + 1)\n        window_vals = values[start:i + 1]\n        result.append(sum(window_vals) / len(window_vals))\n    return result\n\n\ndef smooth_readings(station, window=3):\n    # BUG (silent): mutates the station's readings list to overwrite temps with the\n    # smoothed values, and returns the station rather than a fresh list of smoothed temps.\n    temps = [r.temp_c for r in station.readings]\n    smoothed = trailing_average(temps, window)\n    for r, s in zip(station.readings, smoothed):\n        r.temp_c = s\n    return station\n"
+        "content": "def trailing_average(values, window):\n    if window <= 0 or not values:\n        return []\n    result = []\n    for i in range(len(values)):\n        start = max(0, i - window + 1)\n        window_vals = values[start:i + 1]\n        result.append(sum(window_vals) / len(window_vals))\n    return result\n\n\ndef smooth_readings(station, window=3):\n    temps = [r.temp_c for r in station.readings]\n    smoothed = trailing_average(temps, window)\n    for r, s in zip(station.readings, smoothed):\n        r.temp_c = s\n    return station\n"
       },
       {
         "name": "formatter.py",
-        "content": "def c_to_f(temp_c):\n    # BUG (silent): operator precedence — Python evaluates 9/5 first as float, fine,\n    # BUT missing parens around (temp_c * 9 / 5) means + 32 binds after correctly...\n    # Actual bug: divides by 5 BEFORE multiplying by 9 in integer-context-friendly way that loses precision\n    # when temp_c is provided as an int. Use of // turns truthful float math into truncation.\n    return temp_c * 9 // 5 + 32\n\n\ndef format_alert(reading):\n    f = c_to_f(reading.temp_c)\n    return f\"{reading.ts.isoformat()}: {f:.1f}°F, {reading.humidity}% humidity\"\n"
+        "content": "def c_to_f(temp_c):\n    return temp_c * 9 // 5 + 32\n\n\ndef format_alert(reading):\n    f = c_to_f(reading.temp_c)\n    return f\"{reading.ts.isoformat()}: {f:.1f}°F, {reading.humidity}% humidity\"\n"
       },
       {
-        "name": "pipeline.py",
-        "content": "from aggregator import hourly_averages, daily_max\nfrom alerts import heat_alerts, humidity_alerts, wind_alerts\nfrom trends import smooth_readings\n\n\ndef daily_report(station):\n    return {\n        'hourly': hourly_averages(station),\n        'daily_max': daily_max(station),\n        'heat_alerts': heat_alerts(station.readings),\n        'humidity_alerts': humidity_alerts(station.readings),\n        'wind_alerts': wind_alerts(station.readings),\n    }\n"
+        "name": "main.py",
+        "content": "import datetime\nfrom station import Station, Reading\nfrom aggregator import hourly_averages, daily_max\nfrom alerts import heat_alerts\nfrom trends import smooth_readings\nfrom formatter import c_to_f\n\n\ndef TS(h, m=0):\n    return datetime.datetime(2024, 6, 1, h, m)\n\n\ndef run():\n    s = Station('S1', 'Phoenix', 33.4, -112.0)\n    # Hour 10: temps 30, 32 → expected avg 31\n    s.add_reading(Reading(TS(10, 0), 30.0, 40, 10))\n    s.add_reading(Reading(TS(10, 30), 32.0, 42, 12))\n    # Hour 12: temps 38, 40 → expected avg 39\n    s.add_reading(Reading(TS(12, 0), 38.0, 90, 65))\n    s.add_reading(Reading(TS(12, 30), 40.0, 85, 70))\n\n    print('--- Section A: hourly averages ---')\n    h = hourly_averages(s)\n    print('hour 10 avg:', round(h[(2024, 6, 1, 10)], 2))\n    print('hour 12 avg:', round(h[(2024, 6, 1, 12)], 2))\n\n    print('--- Section B: heat alerts threshold=30 ---')\n    alerts = heat_alerts(s.readings, threshold_c=30.0)\n    print('alerts triggered:', len(alerts))\n\n    print('--- Section C: smoothing ---')\n    original = [r.temp_c for r in s.readings]\n    result = smooth_readings(s, window=3)\n    print('result type:', type(result).__name__)\n    print('original temps preserved:', [r.temp_c for r in s.readings] == original)\n\n    print('--- Section D: c_to_f ---')\n    print('c_to_f(37):', c_to_f(37))\n    print('c_to_f(23):', c_to_f(23))\n\n\nif __name__ == '__main__':\n    run()\n"
+      },
+      {
+        "name": "expected_output.txt",
+        "content": "--- Section A: hourly averages ---\nhour 10 avg: 31.0\nhour 12 avg: 39.0\n--- Section B: heat alerts threshold=30 ---\nalerts triggered: 4\n--- Section C: smoothing ---\nresult type: list\noriginal temps preserved: True\n--- Section D: c_to_f ---\nc_to_f(37): 98.6\nc_to_f(23): 73.4\n"
       }
     ],
     "test_file": {
       "name": "test_solution.py",
-      "content": "import unittest\nimport datetime\nfrom station import Station, Reading\nfrom aggregator import hourly_averages, daily_max\nfrom alerts import heat_alerts, humidity_alerts, wind_alerts\nfrom trends import smooth_readings, trailing_average\nfrom formatter import c_to_f\n\n\ndef TS(h, m=0):\n    return datetime.datetime(2024, 6, 1, h, m)\n\n\ndef sample_station():\n    s = Station('S1', 'Phoenix', 33.4, -112.0)\n    # Hour 10: temps 30, 32 → avg 31\n    s.add_reading(Reading(TS(10, 0), 30.0, 40, 10))\n    s.add_reading(Reading(TS(10, 30), 32.0, 42, 12))\n    # Hour 11: temp 36 → avg 36\n    s.add_reading(Reading(TS(11, 0), 36.0, 50, 15))\n    # Hour 12: temps 38, 40 → avg 39\n    s.add_reading(Reading(TS(12, 0), 38.0, 90, 65))\n    s.add_reading(Reading(TS(12, 30), 40.0, 85, 70))\n    return s\n\n\n# CHECKPOINT 1\nclass TestAggregation(unittest.TestCase):\n    def test_hourly_average_hour_10(self):\n        \"\"\"Hour 10 average of [30, 32] must be 31, not diluted by other hours\"\"\"\n        s = sample_station()\n        result = hourly_averages(s)\n        self.assertAlmostEqual(result[(2024, 6, 1, 10)], 31.0)\n\n    def test_hourly_average_hour_12(self):\n        \"\"\"Hour 12 average of [38, 40] must be 39\"\"\"\n        s = sample_station()\n        result = hourly_averages(s)\n        self.assertAlmostEqual(result[(2024, 6, 1, 12)], 39.0)\n\n\n# CHECKPOINT 2\nclass TestAlerts(unittest.TestCase):\n    def test_heat_alert_includes_threshold(self):\n        \"\"\"A reading exactly at 30C must trigger a heat alert (>= threshold)\"\"\"\n        s = sample_station()\n        alerts = heat_alerts(s.readings, threshold_c=30.0)\n        ts_set = {a.ts for a in alerts}\n        self.assertIn(TS(10, 0), ts_set)\n\n    def test_heat_alert_count(self):\n        \"\"\"All 5 readings >= 30C should be flagged\"\"\"\n        s = sample_station()\n        alerts = heat_alerts(s.readings, threshold_c=30.0)\n        self.assertEqual(len(alerts), 5)\n\n\n# CHECKPOINT 3\nclass TestSmoothing(unittest.TestCase):\n    def test_smooth_does_not_mutate_station(self):\n        \"\"\"smooth_readings must NOT overwrite the original station temps\"\"\"\n        s = sample_station()\n        original_temps = [r.temp_c for r in s.readings]\n        smooth_readings(s, window=3)\n        current_temps = [r.temp_c for r in s.readings]\n        self.assertEqual(current_temps, original_temps)\n\n    def test_smooth_returns_list_of_floats(self):\n        \"\"\"smooth_readings should return a list of smoothed temperatures\"\"\"\n        s = sample_station()\n        result = smooth_readings(s, window=3)\n        self.assertIsInstance(result, list)\n        self.assertEqual(len(result), len(s.readings))\n        # First value with window 3 has window size 1\n        self.assertAlmostEqual(result[0], 30.0)\n        # Second has window size 2: avg(30, 32)\n        self.assertAlmostEqual(result[1], 31.0)\n\n\n# CHECKPOINT 4\nclass TestFormatter(unittest.TestCase):\n    def test_c_to_f_exact_37(self):\n        \"\"\"37C must convert to 98.6F — floor-division truncates this to 98\"\"\"\n        self.assertAlmostEqual(c_to_f(37), 98.6, places=1)\n\n    def test_c_to_f_fractional_25(self):\n        \"\"\"25C must convert to 77.0F — bug 25*9//5+32 = 225//5+32 = 45+32 = 77 (OK)\n        but check via a value where // truncates: 23C → 23*9=207, 207//5=41 (truncates from 41.4),\n        +32 = 73 (wrong); correct: 207/5=41.4 +32 = 73.4\"\"\"\n        self.assertAlmostEqual(c_to_f(23), 73.4, places=1)\n\n\nif __name__ == '__main__':\n    unittest.main()\n"
+      "content": "import unittest\nimport datetime\nfrom station import Station, Reading\nfrom aggregator import hourly_averages, daily_max\nfrom alerts import heat_alerts, humidity_alerts, wind_alerts\nfrom trends import smooth_readings, trailing_average\nfrom formatter import c_to_f\n\n\ndef TS(h, m=0):\n    return datetime.datetime(2024, 6, 1, h, m)\n\n\ndef sample_station():\n    s = Station('S1', 'Phoenix', 33.4, -112.0)\n    s.add_reading(Reading(TS(10, 0), 30.0, 40, 10))\n    s.add_reading(Reading(TS(10, 30), 32.0, 42, 12))\n    s.add_reading(Reading(TS(11, 0), 36.0, 50, 15))\n    s.add_reading(Reading(TS(12, 0), 38.0, 90, 65))\n    s.add_reading(Reading(TS(12, 30), 40.0, 85, 70))\n    return s\n\n\n# CHECKPOINT 1\nclass TestAggregation(unittest.TestCase):\n    def test_hourly_average_hour_10(self):\n        \"\"\"Hour 10 average of [30, 32] must be 31, not diluted by other hours\"\"\"\n        s = sample_station()\n        result = hourly_averages(s)\n        self.assertAlmostEqual(result[(2024, 6, 1, 10)], 31.0)\n\n    def test_hourly_average_hour_12(self):\n        \"\"\"Hour 12 average of [38, 40] must be 39\"\"\"\n        s = sample_station()\n        result = hourly_averages(s)\n        self.assertAlmostEqual(result[(2024, 6, 1, 12)], 39.0)\n\n\n# CHECKPOINT 2\nclass TestAlerts(unittest.TestCase):\n    def test_heat_alert_includes_threshold(self):\n        \"\"\"A reading exactly at 30C must trigger a heat alert (>= threshold)\"\"\"\n        s = sample_station()\n        alerts = heat_alerts(s.readings, threshold_c=30.0)\n        ts_set = {a.ts for a in alerts}\n        self.assertIn(TS(10, 0), ts_set)\n\n    def test_heat_alert_count(self):\n        \"\"\"All 5 readings >= 30C should be flagged\"\"\"\n        s = sample_station()\n        alerts = heat_alerts(s.readings, threshold_c=30.0)\n        self.assertEqual(len(alerts), 5)\n\n\n# CHECKPOINT 3\nclass TestSmoothing(unittest.TestCase):\n    def test_smooth_does_not_mutate_station(self):\n        \"\"\"smooth_readings must NOT overwrite the original station temps\"\"\"\n        s = sample_station()\n        original_temps = [r.temp_c for r in s.readings]\n        smooth_readings(s, window=3)\n        current_temps = [r.temp_c for r in s.readings]\n        self.assertEqual(current_temps, original_temps)\n\n    def test_smooth_returns_list_of_floats(self):\n        \"\"\"smooth_readings should return a list of smoothed temperatures\"\"\"\n        s = sample_station()\n        result = smooth_readings(s, window=3)\n        self.assertIsInstance(result, list)\n        self.assertEqual(len(result), len(s.readings))\n        self.assertAlmostEqual(result[0], 30.0)\n        self.assertAlmostEqual(result[1], 31.0)\n\n\n# CHECKPOINT 4\nclass TestFormatter(unittest.TestCase):\n    def test_c_to_f_exact_37(self):\n        \"\"\"37C must convert to 98.6F\"\"\"\n        self.assertAlmostEqual(c_to_f(37), 98.6, places=1)\n\n    def test_c_to_f_fractional_23(self):\n        \"\"\"23C must convert to 73.4F\"\"\"\n        self.assertAlmostEqual(c_to_f(23), 73.4, places=1)\n\n\nif __name__ == '__main__':\n    unittest.main()\n"
     },
     "bugs": [
       {
         "file": "aggregator.py",
-        "line_hint": 14,
-        "description": "hourly_averages divides each bucket sum by total readings instead of bucket size",
-        "why_subtle": "Looks like a copy-paste error; the result is still a float and code runs fine — wrong values only show up under test",
-        "prevention": "Always write a hand-calculated expected-value test for aggregation functions"
+        "description": "Hourly averages produce wrong numbers"
       },
       {
         "file": "alerts.py",
-        "line_hint": 3,
-        "description": "heat_alerts uses > instead of >= for threshold comparison",
-        "why_subtle": "Common boundary mistake — usually only one test in the suite hits the exact boundary",
-        "prevention": "Make the threshold-boundary case an explicit test"
+        "description": "Heat alerts miss some events"
       },
       {
         "file": "trends.py",
-        "line_hint": 13,
-        "description": "smooth_readings mutates input readings and returns the station instead of a fresh list of smoothed temps",
-        "why_subtle": "Code does produce a list of smoothed values, but assigns them back AND returns the wrong object",
-        "prevention": "Treat function inputs as immutable; return new collections"
+        "description": "Smoothing has side effects and returns the wrong thing"
       },
       {
         "file": "formatter.py",
-        "line_hint": 5,
-        "description": "c_to_f uses // (integer division) so int inputs lose precision (e.g. c_to_f(37) returns 98 not 98.6)",
-        "why_subtle": "Floor division only matters for ints; floats pass through unaffected — easy to miss in dev",
-        "prevention": "Pick a non-integer reference value like 37C → 98.6F in a test"
-      },
-      {
-        "file": "station.py",
-        "line_hint": 0,
-        "description": "(no bug in station.py — included for completeness; bug count 4 across the codebase)"
+        "description": "Temperature conversion is off"
       }
     ],
     "stubs": [],
@@ -73,25 +60,25 @@
         "id": 1,
         "title": "Reproduce",
         "ai_enabled": false,
-        "task": "Run the tests. For each failing test add a comment in the responsible file naming your hypothesis. Do NOT use the AI assistant yet."
+        "task": "Run main.py and diff against expected_output.txt. For each diverging section, add a comment in the file you suspect with your hypothesis. Do NOT use the AI assistant yet."
       },
       {
         "id": 2,
         "title": "Isolate",
         "ai_enabled": true,
-        "task": "Narrow down the bugs in aggregator.py and alerts.py. Use the chat to talk through your reasoning before changing code."
+        "task": "Investigate Sections A and B in main.py via the chat. Verify hypotheses by reading the code."
       },
       {
         "id": 3,
         "title": "Fix & Verify",
         "ai_enabled": true,
-        "task": "Patch all bugs one at a time, running tests after each fix. All assertions must pass."
+        "task": "Patch all the bugs one at a time, re-running main.py + the tests after each fix."
       },
       {
         "id": 4,
         "title": "Post-mortem",
         "ai_enabled": true,
-        "task": "In the chat, explain each bug: root cause, why it was hard to spot, and a concrete prevention practice (test design, code review checklist, etc)."
+        "task": "In the chat: explain each bug — root cause, why it was subtle, and how you would catch it in code review."
       }
     ]
   },
@@ -101,7 +88,7 @@
     "files": [
       {
         "name": "student.py",
-        "content": "class Student:\n    def __init__(self, student_id, name):\n        self.student_id = student_id\n        self.name = name\n        self.grades = {}  # course_code -> list of numeric grades\n\n    def record(self, course_code, score):\n        self.grades.setdefault(course_code, []).append(score)\n"
+        "content": "class Student:\n    def __init__(self, student_id, name):\n        self.student_id = student_id\n        self.name = name\n        self.grades = {}\n\n    def record(self, course_code, score):\n        self.grades.setdefault(course_code, []).append(score)\n"
       },
       {
         "name": "gradebook.py",
@@ -109,53 +96,49 @@
       },
       {
         "name": "averages.py",
-        "content": "def course_average(student, course_code):\n    grades = student.grades.get(course_code, [])\n    if not grades:\n        return 0.0\n    return sum(grades) / len(grades)\n\n\ndef overall_average(student):\n    if not student.grades:\n        return 0.0\n    # BUG (silent): averages of averages instead of average of all grades.\n    # Skews results when courses have different numbers of recorded grades.\n    course_avgs = [course_average(student, c) for c in student.grades]\n    return sum(course_avgs) / len(course_avgs)\n"
+        "content": "def course_average(student, course_code):\n    grades = student.grades.get(course_code, [])\n    if not grades:\n        return 0.0\n    return sum(grades) / len(grades)\n\n\ndef overall_average(student):\n    if not student.grades:\n        return 0.0\n    course_avgs = [course_average(student, c) for c in student.grades]\n    return sum(course_avgs) / len(course_avgs)\n"
       },
       {
         "name": "gpa.py",
-        "content": "LETTER_GRADES = [\n    (90, 'A'),\n    (80, 'B'),\n    (70, 'C'),\n    (60, 'D'),\n    (0,  'F'),\n]\n\n\ndef to_letter(score):\n    # BUG (silent): uses > instead of >=; a 90.0 score falls through to 'B'.\n    for cutoff, letter in LETTER_GRADES:\n        if score > cutoff:\n            return letter\n    return 'F'\n\n\nGPA_POINTS = {'A': 4.0, 'B': 3.0, 'C': 2.0, 'D': 1.0, 'F': 0.0}\n\n\ndef compute_gpa(student, gradebook):\n    if not student.grades:\n        return 0.0\n    total_points = 0.0\n    total_credits = 0\n    for code, grades in student.grades.items():\n        course = gradebook.courses.get(code)\n        if course is None:\n            continue\n        avg = sum(grades) / len(grades)\n        letter = to_letter(avg)\n        total_points += GPA_POINTS[letter] * course['credit_hours']\n        total_credits += course['credit_hours']\n    if total_credits == 0:\n        return 0.0\n    return total_points / total_credits\n"
+        "content": "LETTER_GRADES = [\n    (90, 'A'),\n    (80, 'B'),\n    (70, 'C'),\n    (60, 'D'),\n    (0,  'F'),\n]\n\n\ndef to_letter(score):\n    for cutoff, letter in LETTER_GRADES:\n        if score > cutoff:\n            return letter\n    return 'F'\n\n\nGPA_POINTS = {'A': 4.0, 'B': 3.0, 'C': 2.0, 'D': 1.0, 'F': 0.0}\n\n\ndef compute_gpa(student, gradebook):\n    if not student.grades:\n        return 0.0\n    total_points = 0.0\n    total_credits = 0\n    for code, grades in student.grades.items():\n        course = gradebook.courses.get(code)\n        if course is None:\n            continue\n        avg = sum(grades) / len(grades)\n        letter = to_letter(avg)\n        total_points += GPA_POINTS[letter] * course['credit_hours']\n        total_credits += course['credit_hours']\n    if total_credits == 0:\n        return 0.0\n    return total_points / total_credits\n"
       },
       {
         "name": "roster.py",
-        "content": "def top_students(gradebook, n=3):\n    # BUG (silent): sorts ascending by GPA so 'top' is actually bottom.\n    from gpa import compute_gpa\n    entries = [(s, compute_gpa(s, gradebook)) for s in gradebook.students.values()]\n    entries.sort(key=lambda kv: kv[1])\n    return entries[:n]\n\n\ndef students_above(gradebook, gpa_floor):\n    from gpa import compute_gpa\n    return [s for s in gradebook.students.values() if compute_gpa(s, gradebook) >= gpa_floor]\n"
+        "content": "def top_students(gradebook, n=3):\n    from gpa import compute_gpa\n    entries = [(s, compute_gpa(s, gradebook)) for s in gradebook.students.values()]\n    entries.sort(key=lambda kv: kv[1])\n    return entries[:n]\n\n\ndef students_above(gradebook, gpa_floor):\n    from gpa import compute_gpa\n    return [s for s in gradebook.students.values() if compute_gpa(s, gradebook) >= gpa_floor]\n"
       },
       {
         "name": "reports.py",
-        "content": "from averages import overall_average\n\n\ndef transcript(student, gradebook):\n    rows = []\n    for code, grades in student.grades.items():\n        course = gradebook.courses.get(code, {'name': code, 'credit_hours': 0})\n        rows.append({\n            'course': course['name'],\n            'credits': course['credit_hours'],\n            'average': sum(grades) / len(grades),\n        })\n    return rows\n\n\ndef passing(student, gradebook, pass_threshold='60'):\n    # BUG (silent): pass_threshold default is a string; the >= comparison against a number\n    # always raises TypeError in Python 3 — wait, that DOES raise. Use type coercion safely:\n    # We'll convert wrongly. Real bug: compares str to str when sometimes user passes a number.\n    # Realistic version below: stores threshold as str, compares against average (float),\n    # never matches — returns empty list silently when called with default.\n    result = []\n    for code, grades in student.grades.items():\n        avg = sum(grades) / len(grades)\n        if str(avg) >= str(pass_threshold):\n            result.append(code)\n    return result\n"
+        "content": "from averages import overall_average\n\n\ndef transcript(student, gradebook):\n    rows = []\n    for code, grades in student.grades.items():\n        course = gradebook.courses.get(code, {'name': code, 'credit_hours': 0})\n        rows.append({\n            'course': course['name'],\n            'credits': course['credit_hours'],\n            'average': sum(grades) / len(grades),\n        })\n    return rows\n\n\ndef passing(student, gradebook, pass_threshold='60'):\n    result = []\n    for code, grades in student.grades.items():\n        avg = sum(grades) / len(grades)\n        if str(avg) >= str(pass_threshold):\n            result.append(code)\n    return result\n"
+      },
+      {
+        "name": "main.py",
+        "content": "from student import Student\nfrom gradebook import Gradebook\nfrom averages import overall_average\nfrom gpa import to_letter, compute_gpa\nfrom roster import top_students\nfrom reports import passing\n\n\ndef run():\n    # Overall average behavior\n    print('--- Section A: overall average ---')\n    s = Student('X', 'Test')\n    s.record('A', 90)\n    s.record('A', 90)\n    s.record('A', 90)\n    s.record('B', 60)\n    # Three 90s + one 60 → all-grades mean = (270+60)/4 = 82.5\n    print('avg of three 90s and one 60:', round(overall_average(s), 2))\n\n    # Letter grade boundaries\n    print('--- Section B: letter grade boundaries ---')\n    print('score 90:', to_letter(90))\n    print('score 80:', to_letter(80))\n    print('score 70:', to_letter(70))\n\n    # Top students should be highest GPA first\n    print('--- Section C: top students ---')\n    gb = Gradebook()\n    gb.add_course('M', 'Math', credit_hours=3)\n    gb.add_course('E', 'English', credit_hours=3)\n    high = Student('H', 'High')\n    low = Student('L', 'Low')\n    gb.add_student(high)\n    gb.add_student(low)\n    gb.record_grade('H', 'M', 95)\n    gb.record_grade('H', 'E', 90)\n    gb.record_grade('L', 'M', 60)\n    gb.record_grade('L', 'E', 65)\n    ranking = top_students(gb, n=1)\n    print('top student id:', ranking[0][0].student_id)\n\n    # Passing with numeric threshold (single-digit boundary case)\n    print('--- Section D: passing threshold ---')\n    s2 = Student('Z', 'Z')\n    gb.add_student(s2)\n    gb.record_grade('Z', 'M', 9.5)\n    result = passing(s2, gb, pass_threshold=10)\n    print('9.5 average vs threshold 10 — included?:', 'M' in result)\n\n\nif __name__ == '__main__':\n    run()\n"
+      },
+      {
+        "name": "expected_output.txt",
+        "content": "--- Section A: overall average ---\navg of three 90s and one 60: 82.5\n--- Section B: letter grade boundaries ---\nscore 90: A\nscore 80: B\nscore 70: C\n--- Section C: top students ---\ntop student id: H\n--- Section D: passing threshold ---\n9.5 average vs threshold 10 — included?: False\n"
       }
     ],
     "test_file": {
       "name": "test_solution.py",
-      "content": "import unittest\nfrom student import Student\nfrom gradebook import Gradebook\nfrom averages import course_average, overall_average\nfrom gpa import to_letter, compute_gpa\nfrom roster import top_students, students_above\nfrom reports import transcript, passing\n\n\ndef sample_book():\n    gb = Gradebook()\n    gb.add_course('MATH101', 'Calculus', credit_hours=4)\n    gb.add_course('ENG101', 'English', credit_hours=3)\n    gb.add_course('HIST101', 'History', credit_hours=3)\n\n    alice = Student('S1', 'Alice')\n    gb.add_student(alice)\n    gb.record_grade('S1', 'MATH101', 95)\n    gb.record_grade('S1', 'MATH101', 85)  # avg 90\n    gb.record_grade('S1', 'ENG101', 80)\n    gb.record_grade('S1', 'HIST101', 70)\n\n    bob = Student('S2', 'Bob')\n    gb.add_student(bob)\n    gb.record_grade('S2', 'MATH101', 60)\n    gb.record_grade('S2', 'ENG101', 70)\n    gb.record_grade('S2', 'HIST101', 65)\n\n    return gb, alice, bob\n\n\n# CHECKPOINT 1\nclass TestAverages(unittest.TestCase):\n    def test_overall_average_weights_all_grades(self):\n        \"\"\"overall_average should average across ALL grades, not average-of-averages\"\"\"\n        s = Student('X', 'Test')\n        s.record('A', 100)\n        s.record('A', 100)\n        s.record('B', 0)\n        # all-grades average = (100+100+0)/3 = 66.67\n        self.assertAlmostEqual(overall_average(s), 200/3, places=2)\n\n    def test_overall_average_unequal_counts(self):\n        \"\"\"Two courses with different grade counts: must average all 4 grades, not the two means\"\"\"\n        s = Student('X', 'Test')\n        # Course A: three 90s. Course B: one 60. All-grades avg = (270+60)/4 = 82.5\n        # Wrong avg-of-avgs = (90 + 60)/2 = 75\n        s.record('A', 90)\n        s.record('A', 90)\n        s.record('A', 90)\n        s.record('B', 60)\n        self.assertAlmostEqual(overall_average(s), 82.5)\n\n\n# CHECKPOINT 2\nclass TestLetterGrades(unittest.TestCase):\n    def test_to_letter_90_is_A(self):\n        \"\"\"A score of exactly 90 should be an A, not a B\"\"\"\n        self.assertEqual(to_letter(90), 'A')\n\n    def test_to_letter_80_is_B(self):\n        \"\"\"A score of exactly 80 should be a B\"\"\"\n        self.assertEqual(to_letter(80), 'B')\n\n    def test_to_letter_70_is_C(self):\n        \"\"\"A score of exactly 70 should be a C\"\"\"\n        self.assertEqual(to_letter(70), 'C')\n\n    def test_compute_gpa_alice(self):\n        \"\"\"Alice has MATH(avg 90, A, 4ch), ENG(80, B, 3ch), HIST(70, C, 3ch)\n           weighted = (4*4 + 3*3 + 2*3)/10 = 31/10 = 3.1\"\"\"\n        gb, alice, _ = sample_book()\n        self.assertAlmostEqual(compute_gpa(alice, gb), 3.1, places=2)\n\n\n# CHECKPOINT 3\nclass TestRoster(unittest.TestCase):\n    def test_top_students_returns_highest_first(self):\n        \"\"\"top_students(n=1) should return the student with the HIGHEST GPA\"\"\"\n        gb, alice, _ = sample_book()\n        top = top_students(gb, n=1)\n        self.assertEqual(top[0][0].student_id, 'S1')\n\n    def test_students_above_gpa_with_boundary_letters(self):\n        \"\"\"A student whose averages all sit exactly on letter boundaries (which the bug\n        kicks down a letter each) should still clear the 3.0 floor when to_letter is fixed.\"\"\"\n        gb, _, _ = sample_book()\n        boundary = Student('SB', 'Boundary')\n        gb.add_student(boundary)\n        # MATH: 90 (boundary → 'A' fixed, 'B' buggy)\n        # ENG:  80 (boundary → 'B' fixed, 'C' buggy)\n        # HIST: 70 (boundary → 'C' fixed, 'D' buggy)\n        gb.record_grade('SB', 'MATH101', 90)\n        gb.record_grade('SB', 'ENG101', 80)\n        gb.record_grade('SB', 'HIST101', 70)\n        # Fixed: (4*4 + 3*3 + 2*3)/10 = 3.1 → above 3.0\n        # Buggy: (3*4 + 2*3 + 1*3)/10 = 2.1 → below 3.0\n        above = students_above(gb, 3.0)\n        ids = {s.student_id for s in above}\n        self.assertIn('SB', ids)\n\n\n# CHECKPOINT 4\nclass TestReports(unittest.TestCase):\n    def test_passing_rejects_below_threshold(self):\n        \"\"\"A 9.5 average must NOT pass when threshold is 10.\n        Bug: str('9.5') >= str(10) → '9.5' >= '10' → '9' > '1' → True (wrongly passes).\n        Fixed: 9.5 >= 10 → False (correctly excluded).\"\"\"\n        gb, _, _ = sample_book()\n        s = Student('Z', 'Z')\n        gb.add_student(s)\n        gb.record_grade('Z', 'MATH101', 9.5)\n        result = passing(s, gb, pass_threshold=10)\n        self.assertNotIn('MATH101', result)\n\n    def test_passing_handles_single_digit_average(self):\n        \"\"\"A 9.0 average must NOT pass when threshold is 10.\n        Bug: '9.0' >= '10' is True (str compare); Fixed: 9.0 >= 10 is False.\"\"\"\n        gb, _, _ = sample_book()\n        s = Student('Z2', 'Z2')\n        gb.add_student(s)\n        gb.record_grade('Z2', 'MATH101', 9.0)\n        result = passing(s, gb, pass_threshold=10)\n        self.assertNotIn('MATH101', result)\n\n\nif __name__ == '__main__':\n    unittest.main()\n"
+      "content": "import unittest\nfrom student import Student\nfrom gradebook import Gradebook\nfrom averages import course_average, overall_average\nfrom gpa import to_letter, compute_gpa\nfrom roster import top_students, students_above\nfrom reports import transcript, passing\n\n\ndef sample_book():\n    gb = Gradebook()\n    gb.add_course('MATH101', 'Calculus', credit_hours=4)\n    gb.add_course('ENG101', 'English', credit_hours=3)\n    gb.add_course('HIST101', 'History', credit_hours=3)\n    alice = Student('S1', 'Alice')\n    gb.add_student(alice)\n    gb.record_grade('S1', 'MATH101', 95)\n    gb.record_grade('S1', 'MATH101', 85)\n    gb.record_grade('S1', 'ENG101', 80)\n    gb.record_grade('S1', 'HIST101', 70)\n    bob = Student('S2', 'Bob')\n    gb.add_student(bob)\n    gb.record_grade('S2', 'MATH101', 60)\n    gb.record_grade('S2', 'ENG101', 70)\n    gb.record_grade('S2', 'HIST101', 65)\n    return gb, alice, bob\n\n\n# CHECKPOINT 1\nclass TestAverages(unittest.TestCase):\n    def test_overall_average_weights_all_grades(self):\n        \"\"\"overall_average should average across ALL grades, not average-of-averages\"\"\"\n        s = Student('X', 'Test')\n        s.record('A', 100)\n        s.record('A', 100)\n        s.record('B', 0)\n        self.assertAlmostEqual(overall_average(s), 200/3, places=2)\n\n    def test_overall_average_unequal_counts(self):\n        \"\"\"Two courses with different grade counts: must average all 4 grades, not the two means\"\"\"\n        s = Student('X', 'Test')\n        s.record('A', 90)\n        s.record('A', 90)\n        s.record('A', 90)\n        s.record('B', 60)\n        self.assertAlmostEqual(overall_average(s), 82.5)\n\n\n# CHECKPOINT 2\nclass TestLetterGrades(unittest.TestCase):\n    def test_to_letter_90_is_A(self):\n        \"\"\"A score of exactly 90 should be an A, not a B\"\"\"\n        self.assertEqual(to_letter(90), 'A')\n\n    def test_to_letter_80_is_B(self):\n        \"\"\"A score of exactly 80 should be a B\"\"\"\n        self.assertEqual(to_letter(80), 'B')\n\n    def test_to_letter_70_is_C(self):\n        \"\"\"A score of exactly 70 should be a C\"\"\"\n        self.assertEqual(to_letter(70), 'C')\n\n    def test_compute_gpa_alice(self):\n        \"\"\"Alice GPA: MATH(avg 90, A, 4ch), ENG(80, B, 3ch), HIST(70, C, 3ch) → 3.1\"\"\"\n        gb, alice, _ = sample_book()\n        self.assertAlmostEqual(compute_gpa(alice, gb), 3.1, places=2)\n\n\n# CHECKPOINT 3\nclass TestRoster(unittest.TestCase):\n    def test_top_students_returns_highest_first(self):\n        \"\"\"top_students(n=1) should return the student with the HIGHEST GPA\"\"\"\n        gb, _, _ = sample_book()\n        top = top_students(gb, n=1)\n        self.assertEqual(top[0][0].student_id, 'S1')\n\n    def test_students_above_gpa_with_boundary_letters(self):\n        \"\"\"A student with averages on letter boundaries (90/80/70) should clear 3.0 once to_letter is fixed.\"\"\"\n        gb, _, _ = sample_book()\n        boundary = Student('SB', 'Boundary')\n        gb.add_student(boundary)\n        gb.record_grade('SB', 'MATH101', 90)\n        gb.record_grade('SB', 'ENG101', 80)\n        gb.record_grade('SB', 'HIST101', 70)\n        above = students_above(gb, 3.0)\n        ids = {s.student_id for s in above}\n        self.assertIn('SB', ids)\n\n\n# CHECKPOINT 4\nclass TestReports(unittest.TestCase):\n    def test_passing_rejects_below_threshold(self):\n        \"\"\"A 9.5 average must NOT pass when threshold is 10.\"\"\"\n        gb, _, _ = sample_book()\n        s = Student('Z', 'Z')\n        gb.add_student(s)\n        gb.record_grade('Z', 'MATH101', 9.5)\n        result = passing(s, gb, pass_threshold=10)\n        self.assertNotIn('MATH101', result)\n\n    def test_passing_handles_single_digit_average(self):\n        \"\"\"A 9.0 average must NOT pass when threshold is 10.\"\"\"\n        gb, _, _ = sample_book()\n        s = Student('Z2', 'Z2')\n        gb.add_student(s)\n        gb.record_grade('Z2', 'MATH101', 9.0)\n        result = passing(s, gb, pass_threshold=10)\n        self.assertNotIn('MATH101', result)\n\n\nif __name__ == '__main__':\n    unittest.main()\n"
     },
     "bugs": [
       {
         "file": "averages.py",
-        "line_hint": 14,
-        "description": "overall_average computes average-of-averages instead of average-of-all-grades",
-        "why_subtle": "Looks correct at a glance and matches the units (a number out of 100); only fails when courses have unequal grade counts",
-        "prevention": "Write a test where two courses have different numbers of grades and the two averaging strategies diverge"
+        "description": "overall_average computes the wrong kind of mean when courses have unequal grade counts"
       },
       {
         "file": "gpa.py",
-        "line_hint": 12,
-        "description": "to_letter uses > instead of >=, so boundary scores drop one letter grade",
-        "why_subtle": "Common boundary mistake; integer test scores rarely hit the boundary unless data is curated",
-        "prevention": "Always test the exact boundary (90 → A, 80 → B, etc.)"
+        "description": "Letter grades drop one level at the boundary scores"
       },
       {
         "file": "roster.py",
-        "line_hint": 5,
-        "description": "top_students sorts ascending — returns lowest-GPA students",
-        "why_subtle": "\"top\" reads naturally as best; sort default ascending matches Python convention",
-        "prevention": "Make sort direction explicit in code review checklists"
+        "description": "top_students returns the wrong end of the ranking"
       },
       {
         "file": "reports.py",
-        "line_hint": 16,
-        "description": "passing() compares str(avg) to str(threshold) lexically — \"70.0\" >= \"60\" works by accident, \"9.5\" >= \"10\" does not",
-        "why_subtle": "String comparison of stringified numbers gives correct answer for many inputs and wrong answer for others",
-        "prevention": "Compare numbers as numbers; reject string thresholds at the API boundary"
+        "description": "passing() uses the wrong comparison so small averages slip through"
       }
     ],
     "stubs": [],
@@ -164,25 +147,25 @@
         "id": 1,
         "title": "Reproduce",
         "ai_enabled": false,
-        "task": "Run the full test suite. Annotate each failing test in a comment in the file you suspect, with a short hypothesis. Do NOT use the AI assistant."
+        "task": "Run main.py and diff vs expected_output.txt. Annotate each diverging section in code with your hypothesis. Do NOT use the AI assistant."
       },
       {
         "id": 2,
         "title": "Isolate",
         "ai_enabled": true,
-        "task": "Talk through the overall_average and to_letter bugs in the chat before changing code. Verify your hypothesis by reading the function."
+        "task": "Investigate Sections A and B before changing code. Confirm the hypothesis by reading the implementation."
       },
       {
         "id": 3,
         "title": "Fix & Verify",
         "ai_enabled": true,
-        "task": "Patch all four bugs one at a time, running tests after each fix."
+        "task": "Patch the bugs one at a time. Re-run main.py and the tests after each."
       },
       {
         "id": 4,
         "title": "Post-mortem",
         "ai_enabled": true,
-        "task": "In the chat: explain why string-comparison of stringified numbers is dangerous, and what type-discipline practice would have caught it in code review."
+        "task": "In the chat: explain why string-comparison of stringified numbers is dangerous and how to catch it in review."
       }
     ]
   }

@@ -1,6 +1,49 @@
 import React, { useEffect, useRef, useState } from 'react';
+import ReactMarkdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
 import { chat } from '../api/kimi.js';
 import { accentClasses } from '../utils/format.js';
+
+// Compact markdown renderer styled for the chat panel.
+const mdComponents = {
+  h1: ({ node, ...p }) => <h1 className="text-base font-semibold mt-3 mb-1.5" {...p} />,
+  h2: ({ node, ...p }) => <h2 className="text-sm font-semibold mt-3 mb-1.5" {...p} />,
+  h3: ({ node, ...p }) => <h3 className="text-sm font-semibold mt-2 mb-1" {...p} />,
+  p: ({ node, ...p }) => <p className="my-1.5 leading-relaxed" {...p} />,
+  ul: ({ node, ...p }) => <ul className="list-disc pl-5 my-1.5 space-y-0.5" {...p} />,
+  ol: ({ node, ...p }) => <ol className="list-decimal pl-5 my-1.5 space-y-0.5" {...p} />,
+  li: ({ node, ...p }) => <li className="leading-relaxed" {...p} />,
+  strong: ({ node, ...p }) => <strong className="font-semibold text-white" {...p} />,
+  em: ({ node, ...p }) => <em className="italic text-gray-100" {...p} />,
+  a: ({ node, ...p }) => (
+    <a className="text-blue-400 underline hover:text-blue-300" target="_blank" rel="noreferrer" {...p} />
+  ),
+  hr: () => <hr className="my-3 border-bg-600" />,
+  blockquote: ({ node, ...p }) => (
+    <blockquote className="border-l-2 border-bg-600 pl-3 my-2 text-gray-300 italic" {...p} />
+  ),
+  code: ({ inline, className, children, ...rest }) => {
+    if (inline) {
+      return (
+        <code className="bg-bg-700 text-gray-100 px-1 py-0.5 rounded text-[11.5px] font-mono">
+          {children}
+        </code>
+      );
+    }
+    return (
+      <pre className="bg-bg-900 border border-bg-600 rounded-md p-2.5 my-2 overflow-x-auto text-[11.5px] font-mono leading-relaxed">
+        <code {...rest}>{children}</code>
+      </pre>
+    );
+  },
+  table: ({ node, ...p }) => (
+    <div className="my-2 overflow-x-auto">
+      <table className="border-collapse text-[11.5px]" {...p} />
+    </div>
+  ),
+  th: ({ node, ...p }) => <th className="border border-bg-600 px-2 py-1 bg-bg-700 text-left" {...p} />,
+  td: ({ node, ...p }) => <td className="border border-bg-600 px-2 py-1" {...p} />,
+};
 
 const BASE_SYSTEM = `You are an AI coding assistant embedded in a technical interview simulator. The candidate is working on a multi-file Python codebase. You can see the current file they have open. Help with scaffolding, boilerplate, and clarifying questions — but do NOT hand them the solution. If they ask you to solve something outright, ask 'what have you tried so far?' first. Be concise and Socratic.`;
 
@@ -89,10 +132,18 @@ export default function ChatSidebar({ enabled, modeId, accent, activeFileName, a
             <div className={`text-[10px] uppercase tracking-widest mb-1 ${m.role === 'user' ? 'text-gray-500' : a.text}`}>
               {m.role === 'user' ? 'You' : 'Assistant'}
             </div>
-            <div className={`rounded-md p-2.5 text-[13px] leading-relaxed whitespace-pre-wrap ${
-              m.role === 'user' ? 'bg-bg-700 text-gray-200' : 'bg-bg-900 border border-bg-600 text-gray-100'
+            <div className={`rounded-md p-2.5 text-[13px] leading-relaxed ${
+              m.role === 'user'
+                ? 'bg-bg-700 text-gray-200 whitespace-pre-wrap'
+                : 'bg-bg-900 border border-bg-600 text-gray-100'
             }`}>
-              {m.content}
+              {m.role === 'assistant' ? (
+                <ReactMarkdown remarkPlugins={[remarkGfm]} components={mdComponents}>
+                  {m.content}
+                </ReactMarkdown>
+              ) : (
+                m.content
+              )}
             </div>
           </div>
         ))}

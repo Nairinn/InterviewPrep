@@ -116,27 +116,46 @@ export function parseUnittestOutput(stderr) {
   const tests = [];
   const failureBlocks = {};
 
-  // Pass 1: collect test lines like "test_name (module.Class) ... ok"
-  const testLineRe = /^(test_\S+)\s*\(([^)]+)\)\s*(?:\.\.\.)?\s*(ok|FAIL|ERROR|skipped.*)?$/;
-  for (const line of lines) {
-    const m = line.match(testLineRe);
-    if (m) {
-      const status = (m[3] || '').toLowerCase();
-      tests.push({
-        name: m[1],
-        klass: m[2],
-        status: status.startsWith('ok')
-          ? 'pass'
-          : status.startsWith('fail')
-          ? 'fail'
-          : status.startsWith('error')
-          ? 'error'
-          : status.startsWith('skipped')
-          ? 'skip'
-          : 'unknown',
-        detail: '',
-      });
+  // Python 3.11+ unittest verbosity=2 has two formats:
+  //   Without docstring: "test_name (module.Class.test_name) ... ok"
+  //   With docstring:    "test_name (module.Class.test_name)\nDocstring ... ok"
+  // So we look for the result on the same line OR the next line.
+  const startRe = /^(test_\S+)\s*\(([^)]+)\)(?:\s+(.*))?$/;
+  const resultTailRe = /\.\.\.\s*(ok|FAIL|ERROR|skipped[^\n]*)/i;
+
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
+    const m = line.match(startRe);
+    if (!m) continue;
+    const testName = m[1];
+    const klass = m[2];
+    const trailing = m[3] || '';
+    let statusRaw = '';
+
+    const sameLine = trailing.match(resultTailRe);
+    if (sameLine) {
+      statusRaw = sameLine[1];
+    } else if (i + 1 < lines.length) {
+      // Result is on the next line (docstring case)
+      const next = lines[i + 1].match(resultTailRe);
+      if (next) {
+        statusRaw = next[1];
+        i++; // consume the result line
+      }
     }
+
+    const s = statusRaw.toLowerCase();
+    tests.push({
+      name: testName,
+      klass,
+      status:
+        s.startsWith('ok') ? 'pass'
+        : s.startsWith('fail') ? 'fail'
+        : s.startsWith('error') ? 'error'
+        : s.startsWith('skip') ? 'skip'
+        : 'unknown',
+      detail: '',
+    });
   }
 
   // Pass 2: collect FAIL / ERROR detail blocks

@@ -5,7 +5,7 @@ import { python } from '@codemirror/lang-python';
 import { oneDark } from '@codemirror/theme-one-dark';
 import { bracketMatching, indentOnInput, foldGutter } from '@codemirror/language';
 import { defaultKeymap, history, historyKeymap, indentWithTab } from '@codemirror/commands';
-import { closeBrackets, closeBracketsKeymap } from '@codemirror/autocomplete';
+import { closeBrackets, closeBracketsKeymap, autocompletion, completionKeymap } from '@codemirror/autocomplete';
 
 export default function CodeEditor({ files, activeFile, onChange, onTabPick, dirtyFiles }) {
   const wrapRef = useRef(null);
@@ -34,7 +34,14 @@ export default function CodeEditor({ files, activeFile, onChange, onTabPick, dir
         foldGutter(),
         python(),
         oneDark,
-        keymap.of([...defaultKeymap, ...historyKeymap, ...closeBracketsKeymap, indentWithTab]),
+        autocompletion({ activateOnTyping: true }),
+        keymap.of([
+          ...defaultKeymap,
+          ...historyKeymap,
+          ...closeBracketsKeymap,
+          ...completionKeymap,
+          indentWithTab,
+        ]),
         EditorView.updateListener.of((u) => {
           if (u.docChanged) {
             const content = u.state.doc.toString();

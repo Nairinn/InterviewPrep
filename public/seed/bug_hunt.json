@@ -1,87 +1,167 @@
 [
   {
-    "id": "bug_hunt:seed:0",
-    "domain": "Task Management Backend",
+    "id": "bug_hunt:seed:lib",
+    "domain": "Library Reservation Backend",
     "files": [
       {
-        "name": "validators.py",
-        "content": "import datetime\n\n\ndef validate_task(title, description, priority, due_date):\n    errors = []\n    if not title or len(title.strip()) == 0:\n        errors.append('Title is required')\n    if description and len(description) > 500:\n        errors.append('Description too long')\n    if priority not in ('low', 'medium', 'high', 'critical'):\n        errors.append('Invalid priority')\n    if isinstance(due_date, str):\n        try:\n            due_date = datetime.datetime.strptime(due_date, '%Y-%m-%d').date()\n        except ValueError:\n            errors.append('Invalid due_date format')\n    if isinstance(due_date, datetime.date):\n        if due_date < datetime.date.today():\n            errors.append('Due date must be in the future')\n    return errors\n"
+        "name": "models.py",
+        "content": "class Book:\n    def __init__(self, book_id, title, total_copies):\n        self.book_id = book_id\n        self.title = title\n        self.total_copies = total_copies\n        self.copies_reserved = 0\n\n    def available_copies(self):\n        return self.total_copies - self.copies_reserved\n\n    def is_available(self):\n        # BUG: should be >= 1 to count a single available copy\n        return self.available_copies() > 1\n\n\nclass Member:\n    def __init__(self, member_id, name, tier='basic'):\n        self.member_id = member_id\n        self.name = name\n        self.tier = tier\n\n\nclass Reservation:\n    def __init__(self, book_id, member_id, reserved_on, due_date):\n        self.book_id = book_id\n        self.member_id = member_id\n        self.reserved_on = reserved_on\n        self.due_date = due_date\n        self.returned = False\n"
       },
       {
-        "name": "store.py",
-        "content": "import datetime\n\n\nclass TaskStore:\n    def __init__(self, tasks=None):\n        self.tasks = tasks if tasks is not None else []\n        self._next_id = 1\n\n    def add(self, task):\n        task['id'] = self._next_id\n        self._next_id += 1\n        self.tasks.append(task)\n        return task\n\n    def get(self, task_id):\n        for t in self.tasks:\n            if t['id'] == task_id:\n                return t\n        return None\n\n    def list_by_priority(self):\n        order = {'critical': 4, 'high': 3, 'medium': 2, 'low': 1}\n        return sorted(self.tasks, key=lambda t: order.get(t['priority'], 0), reverse=True)\n\n    def overdue(self):\n        today = datetime.date.today()\n        result = []\n        for t in self.tasks:\n            if t.get('due_date') and t['due_date'] < today:\n                result.append(t)\n        return result\n\n    def complete(self, task_id):\n        task = self.get(task_id)\n        if task is None:\n            raise ValueError('Task not found')\n        task['completed'] = True\n        task['completed_at'] = datetime.datetime.now()\n        return task\n\n    def summary(self):\n        counts = {}\n        for t in self.tasks:\n            p = t['priority']\n            counts[p] = counts.get(p, 0) + 1\n        return counts\n"
+        "name": "policies.py",
+        "content": "def max_books_allowed(member):\n    # BUG: 'or' on truthy literal — always returns 10 because the tier check short-circuits\n    if member.tier == 'gold' or 'silver':\n        return 10\n    return 3\n\n\ndef late_fee(days_late, grace_period=3):\n    if days_late <= grace_period:\n        return 0.0\n    # BUG: charges for every day including the free grace ones — should subtract grace_period\n    return days_late * 0.50\n"
       },
       {
-        "name": "tasks.py",
-        "content": "import datetime\nfrom validators import validate_task\nfrom store import TaskStore\n\n\nclass TaskService:\n    def __init__(self, store=None):\n        self.store = store if store is not None else TaskStore()\n\n    def create(self, title, description='', priority='medium', due_date=None, tags=[]):\n        errors = validate_task(title, description, priority, due_date)\n        if errors:\n            raise ValueError(errors)\n        task = {\n            'title': title.strip(),\n            'description': description.strip() if description else '',\n            'priority': priority,\n            'due_date': due_date,\n            'tags': tags,\n            'completed': False,\n            'created_at': datetime.datetime.now(),\n        }\n        return self.store.add(task)\n\n    def list_overdue(self):\n        return self.store.overdue()\n\n    def batch_create(self, items):\n        created = []\n        for item in items:\n            task = self.create(\n                item['title'],\n                item.get('description', ''),\n                item.get('priority', 'medium'),\n                item.get('due_date'),\n                item.get('tags', []),\n            )\n            created.append(task)\n        return created\n\n    def search(self, query):\n        q = query.lower()\n        results = []\n        for t in self.store.tasks:\n            if q in t['title'].lower() or q in t['description'].lower():\n                results.append(t)\n        return self.store.tasks\n\n    def tag_summary(self):\n        summary = {}\n        for t in self.store.tasks:\n            for tag in t['tags']:\n                summary[tag] = summary.get(tag, 0) + 1\n        return summary\n"
+        "name": "library.py",
+        "content": "import datetime\nfrom models import Book, Reservation\nfrom policies import max_books_allowed\n\n\nclass Library:\n    def __init__(self):\n        self.books = {}\n        self.members = {}\n        self.reservations = []\n\n    def add_book(self, book):\n        self.books[book.book_id] = book\n\n    def add_member(self, member):\n        self.members[member.member_id] = member\n\n    def reserve(self, book_id, member_id, history=[]):\n        # BUG: mutable default arg — every call shares the same list\n        book = self.books.get(book_id)\n        member = self.members.get(member_id)\n        if book is None or member is None:\n            return None\n\n        active_count = sum(\n            1 for r in self.reservations\n            if r.member_id == member_id and not r.returned\n        )\n        if active_count >= max_books_allowed(member):\n            return None\n        if not book.is_available():\n            return None\n\n        book.copies_reserved += 1\n        today = datetime.date(2024, 6, 1)\n        due = today + datetime.timedelta(days=14)\n        r = Reservation(book_id, member_id, today, due)\n        self.reservations.append(r)\n        history.append((book_id, member_id))\n        return r\n\n    def return_book(self, book_id, member_id):\n        for r in self.reservations:\n            if r.book_id == book_id and r.member_id == member_id and not r.returned:\n                r.returned = True\n                book = self.books.get(book_id)\n                if book is not None:\n                    book.copies_reserved -= 1\n                return True\n        return False\n\n    def member_active_reservations(self, member_id):\n        return [r for r in self.reservations if r.member_id == member_id and not r.returned]\n"
       },
       {
-        "name": "filters.py",
-        "content": "import datetime\n\n\ndef filter_by_tag(tasks, tag):\n    return [t for t in tasks if tag in t.get('tags', [])]\n\n\ndef filter_by_date_range(tasks, start, end):\n    result = []\n    for t in tasks:\n        d = t.get('due_date')\n        if d is None:\n            continue\n        if start <= d < end:\n            result.append(t)\n    return result\n\n\ndef filter_by_completion(tasks, completed=True):\n    return [t for t in tasks if t.get('completed') == completed]\n\n\ndef sort_by_due_date(tasks):\n    def key(t):\n        d = t.get('due_date')\n        return d if d is not None else datetime.date.max\n    return sorted(tasks, key=key)\n"
-      },
-      {
-        "name": "api.py",
-        "content": "from tasks import TaskService\nfrom store import TaskStore\nfrom filters import filter_by_tag, filter_by_completion\n\n\nclass TaskAPI:\n    def __init__(self, store=None):\n        self.service = TaskService(store=store if store is not None else TaskStore())\n\n    def create_task(self, title, description='', priority='medium', due_date=None, tags=None):\n        return self.service.create(title, description, priority, due_date, tags)\n\n    def get_dashboard(self, tag_filter=None, show_completed=False):\n        tasks = self.service.store.tasks\n        if not show_completed:\n            tasks = filter_by_completion(tasks, completed=False)\n        if tag_filter:\n            tasks = filter_by_tag(tasks, tag_filter)\n        order = {'critical': 4, 'high': 3, 'medium': 2, 'low': 1}\n        tasks = sorted(tasks, key=lambda t: order.get(t['priority'], 0))\n        summary = self.service.store.summary()\n        overdue = self.service.list_overdue()\n        return {\n            'tasks': tasks,\n            'summary': summary,\n            'overdue_count': len(overdue),\n        }\n\n    def bulk_import(self, raw_items):\n        normalized = []\n        for r in raw_items:\n            item = {\n                'title': r.get('title', ''),\n                'description': r.get('description', ''),\n                'priority': r.get('priority', 'medium'),\n                'due_date': r.get('due_date'),\n                'tags': r.get('tags') if r.get('tags') is not None else [],\n            }\n            normalized.append(item)\n        return self.service.batch_create(normalized)\n\n    def get_stats(self):\n        all_tasks = self.service.store.tasks\n        completed = [t for t in all_tasks if t.get('completed')]\n        total = len(all_tasks)\n        return {\n            'completion_rate': len(completed) / total,\n            'total': total,\n            'completed': len(completed),\n        }\n"
+        "name": "reports.py",
+        "content": "from collections import Counter\n\n\ndef popular_books(library, top_n=3):\n    counter = Counter(r.book_id for r in library.reservations)\n    # BUG: sorts ascending by count instead of descending\n    sorted_items = sorted(counter.items(), key=lambda kv: kv[1])\n    return [book_id for book_id, _ in sorted_items[:top_n]]\n\n\ndef member_summary(library, member_id):\n    active = library.member_active_reservations(member_id)\n    summary = {\n        'member_id': member_id,\n        'active_count': len(active),\n        'book_ids': [r.book_id for r in active],\n    }\n    # BUG: missing return statement\n"
       }
     ],
     "test_file": {
       "name": "test_solution.py",
-      "content": "import datetime\nimport unittest\nfrom api import TaskAPI\nfrom store import TaskStore\nfrom tasks import TaskService\nfrom filters import filter_by_date_range\n\n\n# CHECKPOINT 1\nclass TestStoreBugs(unittest.TestCase):\n    def test_task_search_returns_only_matching(self):\n        \"\"\"search() must return only matching tasks, not all tasks\"\"\"\n        svc = TaskService()\n        svc.create('alpha project', 'desc one')\n        svc.create('beta task', 'desc two')\n        results = svc.search('alpha')\n        self.assertEqual(len(results), 1)\n        self.assertEqual(results[0]['title'], 'alpha project')\n\n    def test_filter_by_date_range_includes_end_date(self):\n        \"\"\"filter_by_date_range must include tasks due exactly on end date\"\"\"\n        t1 = {'title': 'A', 'due_date': datetime.date(2024, 1, 10)}\n        t2 = {'title': 'B', 'due_date': datetime.date(2024, 1, 15)}\n        result = filter_by_date_range([t1, t2], datetime.date(2024, 1, 1), datetime.date(2024, 1, 15))\n        self.assertEqual(len(result), 2, 'Task due on end date should be included')\n\n\n# CHECKPOINT 2\nclass TestFilterBugs(unittest.TestCase):\n    def test_api_dashboard_sorts_priority_descending(self):\n        \"\"\"Dashboard should show critical before low\"\"\"\n        api = TaskAPI()\n        api.create_task('L', priority='low')\n        api.create_task('H', priority='critical')\n        dash = api.get_dashboard(show_completed=True)\n        priorities = [t['priority'] for t in dash['tasks']]\n        self.assertEqual(priorities, ['critical', 'low'])\n\n    def test_tags_not_shared_across_tasks(self):\n        \"\"\"Creating tasks with different tags should not share the list\"\"\"\n        svc = TaskService()\n        t1 = svc.create('A', tags=['x'])\n        t2 = svc.create('B', tags=['y'])\n        self.assertEqual(t1['tags'], ['x'])\n        self.assertEqual(t2['tags'], ['y'])\n\n\n# CHECKPOINT 3\nclass TestEdgeCases(unittest.TestCase):\n    def test_api_stats_with_zero_tasks(self):\n        \"\"\"get_stats should handle zero tasks gracefully\"\"\"\n        api = TaskAPI(store=TaskStore())\n        stats = api.get_stats()\n        self.assertEqual(stats['completion_rate'], 0.0)\n        self.assertEqual(stats['total'], 0)\n\n    def test_batch_create_preserves_tags(self):\n        \"\"\"batch_create should carry tags through correctly\"\"\"\n        api = TaskAPI()\n        created = api.bulk_import([\n            {'title': 'A', 'tags': ['bug', 'urgent']},\n        ])\n        self.assertEqual(created[0]['tags'], ['bug', 'urgent'])\n\n\n# CHECKPOINT 4\nclass TestValidation(unittest.TestCase):\n    def test_validate_rejects_empty_title(self):\n        \"\"\"Empty title should raise ValueError\"\"\"\n        api = TaskAPI()\n        with self.assertRaises(ValueError):\n            api.create_task('  ')\n\n    def test_validate_rejects_invalid_priority(self):\n        \"\"\"Unknown priority should raise ValueError\"\"\"\n        api = TaskAPI()\n        with self.assertRaises(ValueError):\n            api.create_task('T', priority='super-high')\n\n\nif __name__ == '__main__':\n    unittest.main()\n"
+      "content": "import unittest\nimport datetime\nfrom models import Book, Member, Reservation\nfrom library import Library\nfrom policies import max_books_allowed, late_fee\nfrom reports import popular_books, member_summary\n\n\ndef make_library():\n    lib = Library()\n    lib.add_book(Book('B1', 'Python 101', total_copies=2))\n    lib.add_book(Book('B2', 'Algorithms', total_copies=1))\n    lib.add_book(Book('B3', 'Databases', total_copies=3))\n    lib.add_member(Member('M1', 'Alice', tier='basic'))\n    lib.add_member(Member('M2', 'Bob', tier='gold'))\n    return lib\n\n\n# CHECKPOINT 1\nclass TestBookAvailability(unittest.TestCase):\n    def test_book_available_with_one_copy_left(self):\n        \"\"\"Book with exactly 1 available copy must report available\"\"\"\n        b = Book('B', 'Title', total_copies=1)\n        self.assertTrue(b.is_available())\n\n    def test_basic_member_max_books_is_three(self):\n        \"\"\"basic-tier member should have 3-book limit\"\"\"\n        m = Member('M', 'X', tier='basic')\n        self.assertEqual(max_books_allowed(m), 3)\n\n\n# CHECKPOINT 2\nclass TestReservationFlow(unittest.TestCase):\n    def test_reserve_history_isolated_between_calls(self):\n        \"\"\"history default arg must NOT leak between separate reserve() calls\"\"\"\n        lib = make_library()\n        r1 = lib.reserve('B1', 'M1')\n        r2 = lib.reserve('B3', 'M2')\n        # If mutable default leaks, history list grows across calls.\n        # We assert by checking a fresh instance starts clean.\n        lib2 = Library()\n        lib2.add_book(Book('X', 'X', 1))\n        lib2.add_member(Member('Z', 'Z'))\n        h = []\n        lib2.reserve('X', 'Z', history=h)\n        self.assertEqual(len(h), 1)\n        h2 = []\n        lib2.reserve('X', 'Z', history=h2)  # already reserved → returns None, no append\n        self.assertEqual(len(h2), 0)\n\n    def test_basic_member_blocked_at_limit(self):\n        \"\"\"basic member with 3 active reservations cannot reserve a 4th\"\"\"\n        lib = make_library()\n        for bid in ['B1', 'B3', 'B3']:\n            lib.reserve(bid, 'M1')\n        # B4 has 2 copies so is_available() works even with the boundary bug\n        lib.add_book(Book('B4', 'Extra', total_copies=2))\n        result = lib.reserve('B4', 'M1')\n        self.assertIsNone(result)\n\n\n# CHECKPOINT 3\nclass TestPoliciesAndReports(unittest.TestCase):\n    def test_late_fee_one_day_past_grace(self):\n        \"\"\"One day past grace=3 should charge for exactly that one day (0.50)\"\"\"\n        self.assertAlmostEqual(late_fee(4, grace_period=3), 0.50)\n\n    def test_late_fee_subtracts_grace(self):\n        \"\"\"5 days late with grace=3 should charge 2*0.50 = 1.00, not 5*0.50\"\"\"\n        self.assertAlmostEqual(late_fee(5, grace_period=3), 1.00)\n\n    def test_popular_books_sorted_desc(self):\n        \"\"\"popular_books should return most-reserved first\"\"\"\n        lib = make_library()\n        lib.reserve('B1', 'M1')\n        lib.reserve('B3', 'M1')\n        lib.reserve('B3', 'M2')\n        # B3 has 2 reservations, B1 has 1\n        result = popular_books(lib, top_n=2)\n        self.assertEqual(result[0], 'B3')\n\n    def test_member_summary_returns_dict(self):\n        \"\"\"member_summary must return a dict, not None\"\"\"\n        lib = make_library()\n        lib.reserve('B1', 'M2')\n        result = member_summary(lib, 'M2')\n        self.assertIsNotNone(result)\n        self.assertEqual(result['member_id'], 'M2')\n\n\n# CHECKPOINT 4\nclass TestEdgeCases(unittest.TestCase):\n    def test_member_summary_active_count(self):\n        \"\"\"member_summary active_count must reflect current outstanding holds\"\"\"\n        lib = make_library()\n        lib.reserve('B1', 'M1')\n        lib.reserve('B3', 'M1')\n        result = member_summary(lib, 'M1')\n        self.assertEqual(result['active_count'], 2)\n\n\nif __name__ == '__main__':\n    unittest.main()\n"
     },
     "bugs": [
-      {"file": "tasks.py", "line_hint": 37, "description": "search() returns self.store.tasks instead of the filtered results variable"},
-      {"file": "filters.py", "line_hint": 15, "description": "filter_by_date_range uses strict < for end boundary, excluding tasks due exactly on end date"},
-      {"file": "api.py", "line_hint": 22, "description": "Dashboard sorts priority ascending instead of descending"},
-      {"file": "api.py", "line_hint": 40, "description": "get_stats can divide by zero when store has no tasks"},
-      {"file": "tasks.py", "line_hint": 10, "description": "create() uses mutable default argument tags=[] causing shared state between calls"}
+      {
+        "file": "models.py",
+        "line_hint": 12,
+        "description": "Book.is_available uses > 1 instead of >= 1"
+      },
+      {
+        "file": "policies.py",
+        "line_hint": 3,
+        "description": "max_books_allowed uses 'or' on truthy literal — always returns 10"
+      },
+      {
+        "file": "policies.py",
+        "line_hint": 9,
+        "description": "late_fee uses <= grace_period; the boundary day is treated incorrectly"
+      },
+      {
+        "file": "library.py",
+        "line_hint": 18,
+        "description": "Library.reserve has mutable default arg history=[]"
+      },
+      {
+        "file": "reports.py",
+        "line_hint": 6,
+        "description": "popular_books sorts ascending — should be descending"
+      },
+      {
+        "file": "reports.py",
+        "line_hint": 17,
+        "description": "member_summary missing return statement"
+      }
     ],
+    "stubs": [],
     "checkpoints": [
-      {"id": 1, "title": "Orientation", "ai_enabled": false, "task": "Run the tests. Read the output carefully. Find and fix bugs #1 (search returning all tasks) and #2 (date range excluding end boundary) without using the AI assistant."},
-      {"id": 2, "title": "Feature Extension", "ai_enabled": true, "task": "Implement a new endpoint `get_upcoming(days)` that returns tasks due within the next N days, sorted by due date. Use the existing `filter_by_date_range` function."},
-      {"id": 3, "title": "Optimization", "ai_enabled": true, "task": "Fix the remaining 3 bugs (dashboard sort order, stats divide-by-zero, mutable default tags). Explain each fix in the chat as you make it."},
-      {"id": 4, "title": "Edge Cases", "ai_enabled": true, "task": "Add input validation and error handling for the `bulk_import` method. Ensure each imported item has a non-empty title and valid priority before calling batch_create."}
-    ],
-    "stubs": []
+      {
+        "id": 1,
+        "title": "Orientation",
+        "ai_enabled": false,
+        "task": "Run the tests. Fix the bug in Book.is_available (models.py) and the bug in max_books_allowed (policies.py). Do not use the AI assistant."
+      },
+      {
+        "id": 2,
+        "title": "Reservation Flow",
+        "ai_enabled": true,
+        "task": "Fix the mutable-default-argument bug in Library.reserve so each call uses an isolated history list, then verify the basic-tier reservation limit works."
+      },
+      {
+        "id": 3,
+        "title": "Policies & Reports",
+        "ai_enabled": true,
+        "task": "Fix the late-fee boundary bug, the popular_books sort direction, and the missing return in member_summary. Explain each fix in chat."
+      },
+      {
+        "id": 4,
+        "title": "Edge Cases",
+        "ai_enabled": true,
+        "task": "Add input validation to Library.reserve (reject when book_id or member_id is missing — already partially handled) and Library.return_book. Make sure the gold-tier and active-count tests pass cleanly."
+      }
+    ]
   },
   {
-    "id": "bug_hunt:seed:1",
-    "domain": "Inventory Management System",
+    "id": "bug_hunt:seed:queue",
+    "domain": "Support Ticket Queue Backend",
     "files": [
       {
-        "name": "products.py",
-        "content": "import re\n\n\nclass Product:\n    def __init__(self, sku, name, price, quantity=0, categories=None):\n        self.sku = sku\n        self.name = name\n        self.price = price\n        self.categories = categories if categories is not None else []\n        self.quantity = quantity\n\n    def restock(self, amount):\n        if amount < 0:\n            raise ValueError('Amount must be non-negative')\n        self.quantity += amount\n\n    def sell(self, amount):\n        if amount < 0:\n            raise ValueError('Amount must be non-negative')\n        if amount > self.quantity:\n            raise ValueError('Not enough stock')\n        self.quantity -= amount\n\n    def is_in_stock(self):\n        return self.quantity >= 0\n\n    def value(self):\n        return self.price * self.quantity\n\n\ndef sanitize_sku(raw):\n    s = raw.strip().upper()\n    if not re.match(r'^[A-Z0-9-]+$', s):\n        raise ValueError('Invalid SKU format')\n    return s\n"
+        "name": "ticket.py",
+        "content": "class Ticket:\n    def __init__(self, ticket_id, customer_id, priority, subject):\n        self.ticket_id = ticket_id\n        self.customer_id = customer_id\n        self.priority = priority  # 1 (urgent) .. 5 (low)\n        self.subject = subject\n        self.status = 'open'\n        self.assigned_to = None\n        self.events = []\n\n    def assign(self, agent_id):\n        self.assigned_to = agent_id\n        self.events.append(('assigned', agent_id))\n\n    def close(self):\n        # BUG: status should change to 'closed', this is a typo\n        self.status = 'close'\n        self.events.append(('closed',))\n\n    def is_open(self):\n        return self.status == 'open'\n"
       },
       {
-        "name": "catalog.py",
-        "content": "from products import Product\n\n\nclass Catalog:\n    def __init__(self, products=None):\n        self._items = products if products is not None else []\n        self._sku_map = {}\n        for p in self._items:\n            self._sku_map[p.sku] = p\n\n    def add(self, product):\n        if product.sku in self._sku_map:\n            raise ValueError('Duplicate SKU')\n        self._items.append(product)\n        self._sku_map[product.sku] = product\n\n    def get(self, sku):\n        return self._sku_map.get(sku)\n\n    def list_all(self):\n        return self._items\n\n    def total_value(self):\n        total = ''\n        for p in self._items:\n            total = total + p.value()\n        return total\n\n    def low_stock(self, threshold=10):\n        result = []\n        for p in self._items:\n            if p.quantity < threshold:\n                result.append(p)\n        return result\n\n    def by_category(self, category):\n        return [p for p in self._items if category in p.categories]\n"
+        "name": "agent.py",
+        "content": "class Agent:\n    def __init__(self, agent_id, name, max_load=5, skills=None):\n        self.agent_id = agent_id\n        self.name = name\n        self.max_load = max_load\n        # BUG: mutable default avoidance is fine but skills=None then leaks if not assigned\n        # Real bug below:\n        self.skills = skills if skills is not None else []\n        self.active_tickets = []\n\n    def can_take(self, ticket):\n        # BUG: should be < max_load, using <= overshoots by one\n        return len(self.active_tickets) <= self.max_load\n\n    def load(self):\n        return len(self.active_tickets)\n"
       },
       {
-        "name": "orders.py",
-        "content": "import datetime\n\n\nclass Order:\n    def __init__(self, order_id, items, customer):\n        self.order_id = order_id\n        self.items = items\n        self.customer = customer\n        self.created_at = datetime.datetime.now()\n        self.status = 'pending'\n\n    def total(self, catalog):\n        total = 0\n        for sku, qty in self.items.items():\n            product = catalog.get(sku)\n            if product:\n                total += product.price * qty\n\n    def fulfill(self, catalog):\n        for sku, qty in self.items.items():\n            product = catalog.get(sku)\n            if product is None:\n                raise ValueError(f'Product {sku} not found')\n            product.sell(qty)\n        self.status = 'fulfilled'\n\n\ndef build_order(items, customer):\n    if not items:\n        raise ValueError('Order must contain items')\n    order_id = datetime.datetime.now().strftime('%Y%m%d%H%M%S')\n    return Order(order_id, items, customer)\n"
+        "name": "queue.py",
+        "content": "from ticket import Ticket\nfrom agent import Agent\n\n\nclass TicketQueue:\n    def __init__(self):\n        self.tickets = []\n        self.agents = {}\n\n    def submit(self, ticket):\n        self.tickets.append(ticket)\n\n    def register_agent(self, agent):\n        self.agents[agent.agent_id] = agent\n\n    def next_unassigned(self):\n        # BUG: returns LOWEST-priority ticket (highest number) instead of highest (lowest number)\n        unassigned = [t for t in self.tickets if t.assigned_to is None and t.is_open()]\n        if not unassigned:\n            return None\n        return max(unassigned, key=lambda t: t.priority)\n\n    def assign_next(self):\n        ticket = self.next_unassigned()\n        if ticket is None:\n            return None\n        # Find an agent who can take it\n        for agent in self.agents.values():\n            if agent.can_take(ticket):\n                ticket.assign(agent.agent_id)\n                agent.active_tickets.append(ticket.ticket_id)\n                return ticket\n        return None\n"
       },
       {
-        "name": "reporting.py",
-        "content": "import datetime\n\n\ndef generate_inventory_report(catalog):\n    items = catalog.list_all()\n    report = {\n        'generated_at': datetime.datetime.now().isoformat(),\n        'total_skus': len(items),\n        'total_value': catalog.total_value(),\n        'low_stock_count': len(catalog.low_stock()),\n        'categories': {},\n    }\n    for p in items:\n        for cat in p.categories:\n            if cat not in report['categories']:\n                report['categories'][cat] = {'count': 0, 'value': 0}\n            report['categories'][cat]['count'] += 1\n            report['categories'][cat]['value'] += p.value()\n    return report\n\n\ndef generate_reorder_suggestions(catalog, min_threshold=10):\n    suggestions = []\n    for p in catalog.low_stock(min_threshold):\n        suggestion = {\n            'sku': p.sku,\n            'name': p.name,\n            'current': p.quantity,\n            'suggested_reorder': max(0, 100 - p.quantity),\n        }\n        suggestions.append(suggestion)\n    return suggestions\n\n\ndef summarize_sales(orders):\n    total_revenue = 0\n    product_counts = {}\n    for order in orders:\n        if order.status != 'fulfilled':\n            continue\n        for sku, qty in order.items.items():\n            product_counts[sku] = product_counts.get(sku, 0) + 1\n            # REVENUE BUG: total_revenue never increments\n    return {'revenue': total_revenue, 'product_counts': product_counts}\n"
+        "name": "reports.py",
+        "content": "from collections import Counter\n\n\ndef agent_load_report(queue):\n    return {\n        agent.agent_id: agent.load()\n        for agent in queue.agents.values()\n    }\n\n\ndef open_ticket_count(queue):\n    # BUG: counts ALL tickets instead of just open ones\n    return len(queue.tickets)\n\n\ndef average_priority(queue):\n    open_tickets = [t for t in queue.tickets if t.is_open()]\n    if not open_tickets:\n        return 0\n    total = sum(t.priority for t in open_tickets)\n    # BUG: integer division truncates; should be float division\n    return total // len(open_tickets)\n"
       }
     ],
     "test_file": {
       "name": "test_solution.py",
-      "content": "import unittest\nfrom products import Product, sanitize_sku\nfrom catalog import Catalog\nfrom orders import Order, build_order\nfrom reporting import generate_inventory_report, generate_reorder_suggestions, summarize_sales\n\n\n# CHECKPOINT 1\nclass TestProductBugs(unittest.TestCase):\n    def test_out_of_stock_item_not_in_stock(self):\n        \"\"\"Product with quantity 0 should not be in stock\"\"\"\n        p = Product('SKU-1', 'Widget', 10.0, quantity=0)\n        self.assertFalse(p.is_in_stock())\n\n    def test_low_stock_boundary_at_threshold(self):\n        \"\"\"Product with quantity exactly equal to threshold should appear in low_stock\"\"\"\n        cat = Catalog()\n        cat.add(Product('SKU-1', 'A', 1.0, quantity=10))\n        self.assertEqual(len(cat.low_stock(10)), 1)\n\n    def test_total_value_calculation(self):\n        \"\"\"Catalog total_value should sum product values correctly\"\"\"\n        cat = Catalog()\n        cat.add(Product('SKU-1', 'A', 5.0, quantity=10))\n        cat.add(Product('SKU-2', 'B', 3.0, quantity=5))\n        self.assertEqual(cat.total_value(), 65.0)\n\n\n# CHECKPOINT 2\nclass TestOrderBugs(unittest.TestCase):\n    def test_order_total_returns_value(self):\n        \"\"\"Order.total() must return the computed total\"\"\"\n        cat = Catalog()\n        cat.add(Product('SKU-1', 'A', 10.0, quantity=5))\n        order = Order('O1', {'SKU-1': 2}, 'Alice')\n        self.assertEqual(order.total(cat), 20.0)\n\n    def test_build_order_rejects_empty_items(self):\n        \"\"\"build_order should reject empty items dict\"\"\"\n        with self.assertRaises(ValueError):\n            build_order({}, 'Alice')\n\n\n# CHECKPOINT 3\nclass TestReportingBugs(unittest.TestCase):\n    def test_reorder_suggestions_reasonable(self):\n        \"\"\"Reorder suggestion should not suggest 100 units for mildly low stock\"\"\"\n        cat = Catalog()\n        cat.add(Product('SKU-1', 'A', 5.0, quantity=8))\n        suggestions = generate_reorder_suggestions(cat, min_threshold=10)\n        self.assertTrue(len(suggestions) > 0)\n        self.assertLess(suggestions[0]['suggested_reorder'], 50)\n\n    def test_summarize_sales_includes_revenue(self):\n        \"\"\"summarize_sales must include revenue from fulfilled orders\"\"\"\n        cat = Catalog()\n        cat.add(Product('SKU-1', 'A', 10.0, quantity=5))\n        order = Order('O1', {'SKU-1': 3}, 'Alice')\n        order.status = 'fulfilled'\n        summary = summarize_sales([order])\n        self.assertGreater(summary['revenue'], 0)\n\n\n# CHECKPOINT 4\nclass TestValidation(unittest.TestCase):\n    def test_sanitize_sku_rejects_invalid(self):\n        \"\"\"sanitize_sku should reject SKUs with special characters\"\"\"\n        with self.assertRaises(ValueError):\n            sanitize_sku('sku!!!')\n\n    def test_sanitize_sku_accepts_valid(self):\n        \"\"\"sanitize_sku should accept valid alphanumeric SKUs\"\"\"\n        self.assertEqual(sanitize_sku(' abc-123 '), 'ABC-123')\n\n    def test_duplicate_sku_rejected(self):\n        \"\"\"Catalog should reject duplicate SKUs\"\"\"\n        cat = Catalog()\n        cat.add(Product('SKU-1', 'A', 1.0))\n        with self.assertRaises(ValueError):\n            cat.add(Product('SKU-1', 'B', 2.0))\n\n\nif __name__ == '__main__':\n    unittest.main()\n"
+      "content": "import unittest\nfrom ticket import Ticket\nfrom agent import Agent\nfrom queue import TicketQueue\nfrom reports import agent_load_report, open_ticket_count, average_priority\n\n\ndef setup_queue():\n    q = TicketQueue()\n    q.register_agent(Agent('A1', 'Alice', max_load=2))\n    q.register_agent(Agent('A2', 'Bob', max_load=3))\n    q.submit(Ticket('T1', 'C1', priority=3, subject='font bug'))\n    q.submit(Ticket('T2', 'C2', priority=1, subject='payment broken'))\n    q.submit(Ticket('T3', 'C3', priority=5, subject='typo'))\n    return q\n\n\n# CHECKPOINT 1\nclass TestTicketBasics(unittest.TestCase):\n    def test_ticket_close_sets_status(self):\n        \"\"\"Ticket.close should set status to 'closed' (not a typo'd value)\"\"\"\n        t = Ticket('X', 'C', 1, 'hi')\n        t.close()\n        self.assertEqual(t.status, 'closed')\n\n    def test_closed_ticket_records_correct_event(self):\n        \"\"\"Closing a ticket must store the literal string 'closed' in events\"\"\"\n        t = Ticket('X', 'C', 1, 'hi')\n        t.close()\n        # Verifies status is exactly 'closed' — the typo bug stores 'close'\n        self.assertEqual(t.status, 'closed')\n        # And a closed ticket must not appear as open\n        self.assertFalse(t.is_open())\n\n    def test_agent_can_take_at_capacity(self):\n        \"\"\"Agent at max_load must NOT accept another ticket\"\"\"\n        a = Agent('A', 'X', max_load=2)\n        a.active_tickets = ['t1', 't2']\n        self.assertFalse(a.can_take(Ticket('T', 'C', 1, 'x')))\n\n\n# CHECKPOINT 2\nclass TestQueueOrdering(unittest.TestCase):\n    def test_next_unassigned_returns_urgent_first(self):\n        \"\"\"next_unassigned must return the lowest-numbered priority (most urgent)\"\"\"\n        q = setup_queue()\n        t = q.next_unassigned()\n        self.assertEqual(t.ticket_id, 'T2')\n\n    def test_assign_next_chooses_urgent(self):\n        \"\"\"assign_next must pick the urgent ticket and assign an agent\"\"\"\n        q = setup_queue()\n        assigned = q.assign_next()\n        self.assertIsNotNone(assigned)\n        self.assertEqual(assigned.ticket_id, 'T2')\n        self.assertIsNotNone(assigned.assigned_to)\n\n\n# CHECKPOINT 3\nclass TestReports(unittest.TestCase):\n    def test_open_ticket_count_excludes_closed(self):\n        \"\"\"open_ticket_count must NOT include closed tickets\"\"\"\n        q = setup_queue()\n        q.tickets[0].close()  # close T1\n        self.assertEqual(open_ticket_count(q), 2)\n\n    def test_average_priority_returns_float_type(self):\n        \"\"\"average_priority must return a float type, not an int (floor-divided)\"\"\"\n        q = setup_queue()\n        result = average_priority(q)\n        self.assertIsInstance(result, float)\n\n    def test_average_priority_fractional(self):\n        \"\"\"Mean of [1,2] should be 1.5, not 1\"\"\"\n        q = TicketQueue()\n        q.submit(Ticket('T1', 'C', priority=1, subject='a'))\n        q.submit(Ticket('T2', 'C', priority=2, subject='b'))\n        self.assertAlmostEqual(average_priority(q), 1.5)\n\n\n# CHECKPOINT 4\nclass TestIntegration(unittest.TestCase):\n    def test_full_assignment_cycle(self):\n        \"\"\"A submitted urgent ticket should be auto-assignable and counted as open\"\"\"\n        q = setup_queue()\n        q.assign_next()\n        # T2 was urgent, should be assigned now\n        urgent = next(t for t in q.tickets if t.ticket_id == 'T2')\n        self.assertIsNotNone(urgent.assigned_to)\n        # Open count still 3\n        self.assertEqual(open_ticket_count(q), 3)\n\n    def test_agent_load_report_respects_max_load(self):\n        \"\"\"After 3 assignments to a queue where Alice can take 2 and Bob can take 3,\n        Bob must get at least 1 ticket once Alice is full.\"\"\"\n        q = setup_queue()\n        # Add a 4th ticket so we have 4 to distribute\n        q.submit(Ticket('T4', 'C4', priority=2, subject='login broken'))\n        for _ in range(3):\n            q.assign_next()\n        report = agent_load_report(q)\n        # Bug (<=) allows Alice to hold 3 tickets; fix (<) caps her at 2 so Bob gets at least 1\n        self.assertGreaterEqual(report['A2'], 1)\n\n\nif __name__ == '__main__':\n    unittest.main()\n"
     },
     "bugs": [
-      {"file": "products.py", "line_hint": 20, "description": "is_in_stock() returns True when quantity is 0 instead of False"},
-      {"file": "catalog.py", "line_hint": 26, "description": "low_stock() uses strict < instead of <=, excluding items at exactly threshold"},
-      {"file": "catalog.py", "line_hint": 22, "description": "total_value() initializes total as empty string causing type error on concatenation"},
-      {"file": "orders.py", "line_hint": 18, "description": "Order.total() is missing return statement"},
-      {"file": "reporting.py", "line_hint": 28, "description": "generate_reorder_suggestions uses 100 - quantity instead of sensible reorder amount"},
-      {"file": "reporting.py", "line_hint": 43, "description": "summarize_sales never increments revenue"}
+      {
+        "file": "ticket.py",
+        "line_hint": 15,
+        "description": "Ticket.close sets status to 'close' instead of 'closed'"
+      },
+      {
+        "file": "agent.py",
+        "line_hint": 12,
+        "description": "Agent.can_take uses <= max_load — off-by-one allowing capacity+1"
+      },
+      {
+        "file": "queue.py",
+        "line_hint": 19,
+        "description": "next_unassigned uses max() on priority, returning lowest-urgency ticket"
+      },
+      {
+        "file": "reports.py",
+        "line_hint": 11,
+        "description": "open_ticket_count returns total ticket count instead of filtering open ones"
+      },
+      {
+        "file": "reports.py",
+        "line_hint": 19,
+        "description": "average_priority uses // (integer division) instead of /"
+      }
     ],
+    "stubs": [],
     "checkpoints": [
-      {"id": 1, "title": "Orientation", "ai_enabled": false, "task": "Run the tests. Read the output carefully. Find and fix the product stock status bug and the low_stock off-by-one without using the AI assistant."},
-      {"id": 2, "title": "Feature Extension", "ai_enabled": true, "task": "Add a method `apply_discount(code)` to Order that accepts 'SAVE10' for 10% off or 'SAVE20' for 20% off. Use the catalog to look up prices. Return the discounted total."},
-      {"id": 3, "title": "Optimization", "ai_enabled": true, "task": "Fix the remaining bugs: catalog total_value return type, order total missing return, and reporting revenue calculation. Explain each fix in chat."},
-      {"id": 4, "title": "Edge Cases", "ai_enabled": true, "task": "Add input validation to Order.fulfill: check that all items exist in catalog before selling any stock (all-or-nothing behavior)."}
-    ],
-    "stubs": []
+      {
+        "id": 1,
+        "title": "Orientation",
+        "ai_enabled": false,
+        "task": "Run the tests. Fix Ticket.close (ticket.py) and Agent.can_take (agent.py) without the AI assistant."
+      },
+      {
+        "id": 2,
+        "title": "Queue Ordering",
+        "ai_enabled": true,
+        "task": "Fix TicketQueue.next_unassigned so it returns the most urgent (lowest priority number) ticket. Verify both queue tests pass."
+      },
+      {
+        "id": 3,
+        "title": "Reports",
+        "ai_enabled": true,
+        "task": "Fix open_ticket_count and average_priority in reports.py. Explain why integer division is the wrong tool here."
+      },
+      {
+        "id": 4,
+        "title": "Edge Cases",
+        "ai_enabled": true,
+        "task": "Add an integration check: when no agents have capacity, assign_next should return None gracefully. Make sure the two integration tests stay green."
+      }
+    ]
   }
 ]

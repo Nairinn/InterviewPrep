@@ -1,82 +1,171 @@
 [
   {
-    "id": "feature:seed:0",
-    "domain": "URL Shortener Service",
+    "id": "feature:seed:finance",
+    "domain": "Personal Finance Tracker",
     "files": [
       {
-        "name": "storage.py",
-        "content": "import random\nimport string\n\n\nclass MemoryStore:\n    def __init__(self):\n        self._data = {}\n        self._code_to_url = {}\n\n    def save(self, short_code, url, ttl=None):\n        self._data[short_code] = {'url': url, 'ttl': ttl, 'clicks': 0}\n        self._code_to_url[short_code] = url\n\n    def get(self, short_code):\n        return self._data.get(short_code)\n\n    def exists(self, short_code):\n        return short_code in self._data\n\n    def list_all(self):\n        return list(self._data.keys())\n\n    def increment_click(self, short_code):\n        if short_code in self._data:\n            self._data[short_code]['clicks'] += 1\n\n\ndef generate_short_code(length=6):\n    alphabet = string.ascii_letters + string.digits\n    return ''.join(random.choices(alphabet, k=length))\n"
+        "name": "transaction.py",
+        "content": "import datetime\n\n\nclass Transaction:\n    def __init__(self, tx_id, amount, description, date, category=None):\n        self.tx_id = tx_id\n        # amount: positive for income, negative for expense\n        self.amount = amount\n        self.description = description\n        self.date = date\n        self.category = category\n\n    def is_expense(self):\n        return self.amount < 0\n\n    def is_income(self):\n        return self.amount > 0\n"
       },
       {
-        "name": "shortener.py",
-        "content": "from storage import MemoryStore, generate_short_code\n\n\nclass URLShortener:\n    def __init__(self, store=None):\n        self.store = store if store is not None else MemoryStore()\n\n    def shorten(self, url, custom_code=None):\n        if custom_code:\n            if self.store.exists(custom_code):\n                raise ValueError('Code already in use')\n            code = custom_code\n        else:\n            code = generate_short_code()\n            while self.store.exists(code):\n                code = generate_short_code()\n        self.store.save(code, url)\n        return code\n\n    def resolve(self, short_code):\n        record = self.store.get(short_code)\n        if record is None:\n            raise ValueError('Code not found')\n        self.store.increment_click(short_code)\n        return record['url']\n\n    def stats(self, short_code):\n        record = self.store.get(short_code)\n        if record is None:\n            raise ValueError('Code not found')\n        return {\n            'short_code': short_code,\n            'url': record['url'],\n            'clicks': record['clicks'],\n            'ttl': record['ttl'],\n        }\n\n    def batch_shorten(self, urls):\n        results = []\n        for url in urls:\n            code = self.shorten(url)\n            results.append({'url': url, 'short_code': code})\n        return results\n"
+        "name": "account.py",
+        "content": "import datetime\n\n\nclass Account:\n    def __init__(self, name, starting_balance=0.0):\n        self.name = name\n        self.starting_balance = starting_balance\n        self.transactions = []\n\n    def add(self, transaction):\n        self.transactions.append(transaction)\n\n    def balance(self):\n        # TODO STUB 1: Return the current balance.\n        # Starting balance plus the sum of every transaction amount.\n        raise NotImplementedError('account.balance')\n\n    def last_n_days(self, n, today=None):\n        # TODO STUB 2: Return transactions whose date is within the last n days from 'today'.\n        # If today is None, use datetime.date(2024, 6, 1) as the reference point so tests are deterministic.\n        # The window is inclusive on both ends: today - (n-1) <= tx.date <= today.\n        raise NotImplementedError('account.last_n_days')\n"
       },
       {
-        "name": "api.py",
-        "content": "from shortener import URLShortener\nfrom storage import MemoryStore\n\n\nclass ShortenerAPI:\n    def __init__(self):\n        self.shortener = URLShortener()\n        self._analytics = {}\n\n    def create(self, url, custom_code=None):\n        code = self.shortener.shorten(url, custom_code=custom_code)\n        self._analytics[code] = []\n        return {'short_code': code, 'url': url}\n\n    def redirect(self, short_code):\n        url = self.shortener.resolve(short_code)\n        # TODO: implement analytics tracking\n        # Should append a timestamp to self._analytics[short_code]\n        raise NotImplementedError('Track redirect analytics')\n\n    def get_info(self, short_code):\n        stats = self.shortener.stats(short_code)\n        stats['history'] = self._analytics.get(short_code, [])\n        return stats\n\n    def top_links(self, n=5):\n        # TODO: implement top N most-clicked links\n        raise NotImplementedError('Return top N links by clicks')\n\n    def cleanup_expired(self):\n        # TODO: remove all codes with TTL that has expired\n        raise NotImplementedError('Remove expired short codes')\n\n    def export_report(self):\n        # TODO: generate a summary report of total links, total clicks, average clicks per link\n        raise NotImplementedError('Generate summary report')\n"
+        "name": "categories.py",
+        "content": "KEYWORDS = {\n    'groceries': ['supermarket', 'grocery', 'whole foods', 'trader joe'],\n    'rent': ['rent', 'landlord', 'apartment'],\n    'transport': ['uber', 'lyft', 'gas', 'metro', 'subway'],\n    'dining': ['restaurant', 'cafe', 'coffee', 'pizza'],\n    'utilities': ['electric', 'water', 'internet', 'gas bill'],\n}\n\n\ndef auto_categorize(transaction):\n    # TODO STUB 3: Inspect transaction.description (case-insensitive).\n    # Return the first category whose any keyword appears as a substring of the description.\n    # If nothing matches, return 'uncategorized'.\n    raise NotImplementedError('categories.auto_categorize')\n"
       },
       {
-        "name": "validators.py",
-        "content": "import re\n\n\ndef validate_url(url):\n    if not url:\n        raise ValueError('URL is required')\n    if not url.startswith(('http://', 'https://')):\n        raise ValueError('URL must start with http:// or https://')\n    return url\n\n\ndef validate_custom_code(code):\n    if not code:\n        return True\n    if len(code) < 3 or len(code) > 30:\n        raise ValueError('Custom code must be 3-30 characters')\n    if not re.match(r'^[A-Za-z0-9_-]+$', code):\n        raise ValueError('Custom code can only contain letters, numbers, hyphens and underscores')\n    return True\n"
+        "name": "budget.py",
+        "content": "class Budget:\n    def __init__(self):\n        self.limits = {}  # category -> monthly limit (positive number, in dollars spent)\n\n    def set_limit(self, category, monthly_limit):\n        self.limits[category] = monthly_limit\n\n    def over_under(self, account, year, month):\n        # TODO STUB 4: For each category in self.limits, compute:\n        #   spent = sum of |amount| for expense transactions in (year, month) of that category\n        # Return a dict: { category: limit - spent }\n        # Positive values mean under budget; negative mean over.\n        # Categories with no transactions still appear (full limit available).\n        raise NotImplementedError('budget.over_under')\n"
+      },
+      {
+        "name": "reports.py",
+        "content": "from collections import defaultdict\n\n\ndef monthly_summary(account, year, month):\n    # TODO STUB 5: Return a dict with these keys:\n    #   'income'   — sum of positive amounts that month\n    #   'expenses' — absolute sum of negative amounts that month\n    #   'net'      — income - expenses\n    #   'by_category' — dict mapping each category (or 'uncategorized') to total expense in that category\n    raise NotImplementedError('reports.monthly_summary')\n\n\ndef average_daily_spend(account, n_days, today=None):\n    # TODO STUB 6: Compute average daily expense over the last n_days.\n    # Use the same 'today' default (datetime.date(2024, 6, 1)) as account.last_n_days.\n    # Return total_expense / n_days as a float. If n_days <= 0, raise ValueError.\n    raise NotImplementedError('reports.average_daily_spend')\n"
       }
     ],
     "test_file": {
       "name": "test_solution.py",
-      "content": "import unittest\nfrom shortener import URLShortener\nfrom storage import MemoryStore\nfrom api import ShortenerAPI\nfrom validators import validate_url, validate_custom_code\n\n\n# CHECKPOINT 1\nclass TestOrientation(unittest.TestCase):\n    def test_shortener_creates_code(self):\n        \"\"\"Basic shortening should return a non-empty code\"\"\"\n        s = URLShortener()\n        code = s.shorten('https://example.com')\n        self.assertTrue(len(code) > 0)\n\n    def test_resolve_returns_original_url(self):\n        \"\"\"Resolve should return the original URL and track clicks\"\"\"\n        s = URLShortener()\n        code = s.shorten('https://example.com')\n        url = s.resolve(code)\n        self.assertEqual(url, 'https://example.com')\n        self.assertEqual(s.stats(code)['clicks'], 1)\n\n\n# CHECKPOINT 2\nclass TestCoreFeature(unittest.TestCase):\n    def test_api_tracks_redirect_analytics(self):\n        \"\"\"redirect should record a timestamp in analytics history\"\"\"\n        api = ShortenerAPI()\n        api.create('https://example.com', custom_code='abc123')\n        api.redirect('abc123')\n        info = api.get_info('abc123')\n        self.assertEqual(len(info['history']), 1)\n        self.assertIsInstance(info['history'][0], str)\n\n    def test_api_tracks_multiple_redirects(self):\n        \"\"\"Multiple redirects should append multiple timestamps\"\"\"\n        api = ShortenerAPI()\n        api.create('https://foo.com', custom_code='foo')\n        api.redirect('foo')\n        api.redirect('foo')\n        info = api.get_info('foo')\n        self.assertEqual(len(info['history']), 2)\n\n\n# CHECKPOINT 3\nclass TestIntegration(unittest.TestCase):\n    def test_top_links_returns_sorted(self):\n        \"\"\"top_links should return codes sorted by click count descending\"\"\"\n        api = ShortenerAPI()\n        api.create('https://a.com', custom_code='a')\n        api.create('https://b.com', custom_code='b')\n        api.create('https://c.com', custom_code='c')\n        api.redirect('b')\n        api.redirect('b')\n        api.redirect('c')\n        top = api.top_links(n=2)\n        self.assertEqual(top[0]['short_code'], 'b')\n        self.assertEqual(top[1]['short_code'], 'c')\n\n    def test_top_links_respects_limit(self):\n        \"\"\"top_links(n=2) should return exactly 2 items\"\"\"\n        api = ShortenerAPI()\n        api.create('https://x.com', custom_code='x')\n        api.create('https://y.com', custom_code='y')\n        api.create('https://z.com', custom_code='z')\n        top = api.top_links(n=2)\n        self.assertEqual(len(top), 2)\n\n    def test_cleanup_removes_expired(self):\n        \"\"\"cleanup_expired should remove codes past their TTL\"\"\"\n        api = ShortenerAPI()\n        api.shortener.store.save('old', 'https://old.com', ttl=-1)\n        api.shortener.store.save('new', 'https://new.com', ttl=3600)\n        api.cleanup_expired()\n        self.assertIsNone(api.shortener.store.get('old'))\n        self.assertIsNotNone(api.shortener.store.get('new'))\n\n\n# CHECKPOINT 4\nclass TestPolish(unittest.TestCase):\n    def test_export_report(self):\n        \"\"\"export_report should return totals and averages\"\"\"\n        api = ShortenerAPI()\n        api.create('https://a.com', custom_code='a')\n        api.create('https://b.com', custom_code='b')\n        api.redirect('a')\n        api.redirect('a')\n        api.redirect('b')\n        report = api.export_report()\n        self.assertEqual(report['total_links'], 2)\n        self.assertEqual(report['total_clicks'], 3)\n        self.assertEqual(report['average_clicks'], 1.5)\n\n    def test_validate_url_rejects_invalid(self):\n        \"\"\"validate_url should raise on bad input\"\"\"\n        with self.assertRaises(ValueError):\n            validate_url('ftp://bad.com')\n\n    def test_validate_custom_code_rejects_bad(self):\n        \"\"\"validate_custom_code should reject codes with special chars\"\"\"\n        with self.assertRaises(ValueError):\n            validate_custom_code('hello world')\n\n\nif __name__ == '__main__':\n    unittest.main()\n"
+      "content": "import unittest\nimport datetime\nfrom transaction import Transaction\nfrom account import Account\nfrom categories import auto_categorize\nfrom budget import Budget\nfrom reports import monthly_summary, average_daily_spend\n\n\ndef D(y, m, d):\n    return datetime.date(y, m, d)\n\n\ndef sample_account():\n    a = Account('main', starting_balance=1000.0)\n    a.add(Transaction('T1', -50.0, 'Whole Foods Market', D(2024, 5, 28), 'groceries'))\n    a.add(Transaction('T2', -30.0, 'Uber ride downtown', D(2024, 5, 30), 'transport'))\n    a.add(Transaction('T3', 2000.0, 'Paycheck May', D(2024, 5, 31), 'income'))\n    a.add(Transaction('T4', -1200.0, 'Apartment rent June', D(2024, 6, 1), 'rent'))\n    a.add(Transaction('T5', -15.0, 'Coffee shop', D(2024, 6, 1), 'dining'))\n    return a\n\n\n# CHECKPOINT 1\nclass TestAccountFoundation(unittest.TestCase):\n    def test_balance_with_no_transactions(self):\n        \"\"\"balance() of a fresh account equals starting_balance\"\"\"\n        a = Account('empty', starting_balance=250.0)\n        self.assertAlmostEqual(a.balance(), 250.0)\n\n    def test_balance_after_mixed_transactions(self):\n        \"\"\"balance() = starting + sum of all amounts\"\"\"\n        a = sample_account()\n        # 1000 + (-50 -30 +2000 -1200 -15) = 1705\n        self.assertAlmostEqual(a.balance(), 1705.0)\n\n    def test_last_n_days_filters_correctly(self):\n        \"\"\"last_n_days(3) on today=2024-06-01 includes 2024-05-30..06-01\"\"\"\n        a = sample_account()\n        recent = a.last_n_days(3, today=D(2024, 6, 1))\n        ids = sorted(t.tx_id for t in recent)\n        self.assertEqual(ids, ['T2', 'T3', 'T4', 'T5'])\n\n\n# CHECKPOINT 2\nclass TestCategorization(unittest.TestCase):\n    def test_auto_categorize_groceries(self):\n        \"\"\"A 'Trader Joe' description should auto-categorize as 'groceries'\"\"\"\n        t = Transaction('X', -25.0, 'Trader Joe weekly run', D(2024, 6, 1))\n        self.assertEqual(auto_categorize(t), 'groceries')\n\n    def test_auto_categorize_case_insensitive(self):\n        \"\"\"Match should ignore case\"\"\"\n        t = Transaction('X', -25.0, 'COFFEE break at office', D(2024, 6, 1))\n        self.assertEqual(auto_categorize(t), 'dining')\n\n    def test_auto_categorize_uncategorized_fallback(self):\n        \"\"\"Description with no keywords falls back to 'uncategorized'\"\"\"\n        t = Transaction('X', -25.0, 'Mystery vendor', D(2024, 6, 1))\n        self.assertEqual(auto_categorize(t), 'uncategorized')\n\n\n# CHECKPOINT 3\nclass TestBudgetAndReports(unittest.TestCase):\n    def test_budget_over_under_basic(self):\n        \"\"\"Budget limit minus actual expenses by category\"\"\"\n        a = sample_account()\n        b = Budget()\n        b.set_limit('rent', 1500.0)\n        b.set_limit('dining', 10.0)\n        result = b.over_under(a, 2024, 6)\n        # June rent spend: 1200 → remaining = 300\n        self.assertAlmostEqual(result['rent'], 300.0)\n        # June dining spend: 15 → remaining = -5\n        self.assertAlmostEqual(result['dining'], -5.0)\n\n    def test_monthly_summary_may(self):\n        \"\"\"Monthly summary for May 2024 totals\"\"\"\n        a = sample_account()\n        r = monthly_summary(a, 2024, 5)\n        # May: T1 -50, T2 -30, T3 +2000\n        self.assertAlmostEqual(r['income'], 2000.0)\n        self.assertAlmostEqual(r['expenses'], 80.0)\n        self.assertAlmostEqual(r['net'], 1920.0)\n        self.assertAlmostEqual(r['by_category']['groceries'], 50.0)\n\n\n# CHECKPOINT 4\nclass TestPolishAndValidation(unittest.TestCase):\n    def test_average_daily_spend_basic(self):\n        \"\"\"avg daily spend = total expenses in window / n_days\"\"\"\n        a = sample_account()\n        # last 3 days expenses: T2 (30) + T4 (1200) + T5 (15) = 1245\n        avg = average_daily_spend(a, 3, today=D(2024, 6, 1))\n        self.assertAlmostEqual(avg, 415.0)\n\n    def test_average_daily_spend_zero_days_raises(self):\n        \"\"\"n_days=0 must raise ValueError\"\"\"\n        a = sample_account()\n        with self.assertRaises(ValueError):\n            average_daily_spend(a, 0, today=D(2024, 6, 1))\n\n\nif __name__ == '__main__':\n    unittest.main()\n"
     },
+    "bugs": [],
     "stubs": [
-      {"file": "api.py", "function": "redirect", "description": "Track redirect by appending a timestamp to analytics history"},
-      {"file": "api.py", "function": "top_links", "description": "Return top N links sorted by click count descending"},
-      {"file": "api.py", "function": "cleanup_expired", "description": "Remove short codes with negative or zero TTL"},
-      {"file": "api.py", "function": "export_report", "description": "Generate summary with total links, total clicks, average clicks per link"}
+      {
+        "file": "account.py",
+        "function": "balance",
+        "description": "Sum starting_balance + all transaction amounts"
+      },
+      {
+        "file": "account.py",
+        "function": "last_n_days",
+        "description": "Filter transactions in inclusive window today-(n-1)..today"
+      },
+      {
+        "file": "categories.py",
+        "function": "auto_categorize",
+        "description": "Case-insensitive keyword match against transaction description"
+      },
+      {
+        "file": "budget.py",
+        "function": "over_under",
+        "description": "Per-category remaining budget for a given month"
+      },
+      {
+        "file": "reports.py",
+        "function": "monthly_summary",
+        "description": "Income, expenses, net, and per-category breakdown for a month"
+      },
+      {
+        "file": "reports.py",
+        "function": "average_daily_spend",
+        "description": "Average expense per day over a window; validate n_days > 0"
+      }
     ],
     "checkpoints": [
-      {"id": 1, "title": "Orientation", "ai_enabled": false, "task": "Read the codebase. Run the tests to see what is failing. Write a comment at the top of shortener.py explaining the architecture in your own words."},
-      {"id": 2, "title": "Core Feature", "ai_enabled": true, "task": "Implement stub #1 (redirect analytics tracking) and stub #2 (top_links). The redirect stub should append a timestamp string (datetime.datetime.now().isoformat()) to the analytics history. top_links should sort by clicks descending and return a list of dicts with short_code, url, clicks."},
-      {"id": 3, "title": "Integration", "ai_enabled": true, "task": "Implement stub #3 (cleanup_expired). A code is expired if its TTL is not None and TTL <= 0. Remove it from the store and clean up analytics. Then wire up batch_shorten in shortener.py to use validate_url before creating."},
-      {"id": 4, "title": "Polish", "ai_enabled": true, "task": "Implement stub #4 (export_report). Return total_links, total_clicks, and average_clicks. Ensure average_clicks is a float. Add input validation to create() so it rejects empty URLs and invalid custom codes before shortening."}
-    ],
-    "bugs": []
+      {
+        "id": 1,
+        "title": "Foundation",
+        "ai_enabled": false,
+        "task": "Implement Account.balance and Account.last_n_days in account.py. Read the existing Transaction model to understand the data shape. Do NOT use the AI assistant."
+      },
+      {
+        "id": 2,
+        "title": "Categorization",
+        "ai_enabled": true,
+        "task": "Implement categories.auto_categorize. Use the KEYWORDS map, case-insensitive substring match, and fall back to \"uncategorized\"."
+      },
+      {
+        "id": 3,
+        "title": "Budgets & Reports",
+        "ai_enabled": true,
+        "task": "Implement Budget.over_under and reports.monthly_summary. Both filter transactions to a given (year, month)."
+      },
+      {
+        "id": 4,
+        "title": "Polish & Validation",
+        "ai_enabled": true,
+        "task": "Implement reports.average_daily_spend including the ValueError on non-positive n_days."
+      }
+    ]
   },
   {
-    "id": "feature:seed:1",
-    "domain": "Meeting Room Scheduler",
+    "id": "feature:seed:habit",
+    "domain": "Habit Tracker",
     "files": [
       {
-        "name": "room.py",
-        "content": "class Room:\n    def __init__(self, room_id, name, capacity):\n        self.room_id = room_id\n        self.name = name\n        self.capacity = capacity\n        self.schedule = []\n\n    def is_available(self, start, end):\n        for block in self.schedule:\n            # overlap check\n            if start < block['end'] and end > block['start']:\n                return False\n        return True\n\n    def book(self, meeting_id, start, end, organizer):\n        if not self.is_available(start, end):\n            raise ValueError('Room not available')\n        self.schedule.append({'meeting_id': meeting_id, 'start': start, 'end': end, 'organizer': organizer})\n        return True\n\n    def cancel(self, meeting_id):\n        self.schedule = [b for b in self.schedule if b['meeting_id'] != meeting_id]\n\n    def meetings_at(self, day):\n        return [b for b in self.schedule if block['start'].date() == day]\n\n    def utilization(self):\n        # TODO: implement utilization percentage for this room\n        raise NotImplementedError('Calculate room utilization percentage')\n"
+        "name": "habit.py",
+        "content": "import datetime\n\n\nclass Habit:\n    def __init__(self, name, target_per_week=7):\n        self.name = name\n        self.target_per_week = target_per_week\n        self.completions = []  # list of datetime.date\n\n    def log(self, day):\n        if day not in self.completions:\n            self.completions.append(day)\n\n    def total_completions(self):\n        return len(self.completions)\n"
       },
       {
-        "name": "scheduler.py",
-        "content": "from room import Room\n\n\nclass Scheduler:\n    def __init__(self, rooms=None):\n        self.rooms = rooms if rooms is not None else []\n        self._meeting_map = {}\n        self._id_counter = 1\n\n    def find_room(self, capacity, start, end):\n        for room in self.rooms:\n            if room.capacity >= capacity and room.is_available(start, end):\n                return room\n        return None\n\n    def schedule_meeting(self, title, capacity, start, end, organizer):\n        room = self.find_room(capacity, start, end)\n        if room is None:\n            raise ValueError('No room available')\n        meeting_id = f'M{self._id_counter}'\n        self._id_counter += 1\n        room.book(meeting_id, start, end, organizer)\n        self._meeting_map[meeting_id] = {\n            'meeting_id': meeting_id,\n            'title': title,\n            'room': room.room_id,\n            'start': start,\n            'end': end,\n            'organizer': organizer,\n        }\n        return meeting_id\n\n    def cancel_meeting(self, meeting_id):\n        info = self._meeting_map.pop(meeting_id, None)\n        if info is None:\n            raise ValueError('Meeting not found')\n        room = next((r for r in self.rooms if r.room_id == info['room']), None)\n        if room:\n            room.cancel(meeting_id)\n\n    def list_meetings(self, room_id=None):\n        if room_id:\n            return [m for m in self._meeting_map.values() if m['room'] == room_id]\n        return list(self._meeting_map.values())\n\n    def suggest_alternative(self, capacity, start, end, organizer):\n        # TODO: if no room is available, suggest the next available slot in the smallest fitting room\n        raise NotImplementedError('Suggest next available time slot')\n\n    def daily_overview(self, day):\n        # TODO: return a summary of all meetings on a given day grouped by room\n        raise NotImplementedError('Return daily overview grouped by room')\n"
+        "name": "streaks.py",
+        "content": "import datetime\n\n\ndef current_streak(habit, today):\n    # TODO STUB 1: Count consecutive days ending at 'today' where the habit was completed.\n    # Example: completions on June 1, 2, 3 and today=June 3 → streak 3.\n    # If today itself is missing, streak is 0 (broken).\n    raise NotImplementedError('streaks.current_streak')\n\n\ndef longest_streak(habit):\n    # TODO STUB 2: Find the longest run of consecutive days in habit.completions.\n    # Returns the length as an int. Empty completions → 0.\n    raise NotImplementedError('streaks.longest_streak')\n"
       },
       {
-        "name": "conflicts.py",
-        "content": "def detect_conflicts(schedule_blocks):\n    conflicts = []\n    for i in range(len(schedule_blocks)):\n        for j in range(i + 1, len(schedule_blocks)):\n            a = schedule_blocks[i]\n            b = schedule_blocks[j]\n            if a['start'] < b['end'] and b['start'] < a['end']:\n                conflicts.append((a['meeting_id'], b['meeting_id']))\n    return conflicts\n\n\ndef find_free_slots(schedule_blocks, day_start, day_end, duration_minutes):\n    # TODO: find all free slots of at least duration_minutes between day_start and day_end\n    raise NotImplementedError('Find free time slots of given duration')\n"
+        "name": "weekly.py",
+        "content": "import datetime\n\n\ndef week_of(day):\n    # ISO week starting Monday\n    monday = day - datetime.timedelta(days=day.weekday())\n    return monday\n\n\ndef completions_this_week(habit, today):\n    # TODO STUB 3: Return the number of completions whose date is in the same ISO week as 'today'\n    # (Monday-Sunday inclusive).\n    raise NotImplementedError('weekly.completions_this_week')\n\n\ndef hit_target(habit, today):\n    # TODO STUB 4: True if completions_this_week(habit, today) >= habit.target_per_week.\n    raise NotImplementedError('weekly.hit_target')\n"
       },
       {
-        "name": "notifications.py",
-        "content": "import datetime\n\n\ndef format_notification(meeting, minutes_before=15):\n    delta = datetime.timedelta(minutes=minutes_before)\n    remind_at = meeting['start'] - delta\n    return {\n        'recipient': meeting['organizer'],\n        'message': f\"Meeting '{meeting['title']}' starts at {meeting['start'].strftime('%H:%M')}\",\n        'remind_at': remind_at,\n    }\n\n\ndef batch_notifications(meetings):\n    # TODO: generate notifications for all meetings\n    raise NotImplementedError('Generate notifications for a list of meetings')\n\n\ndef upcoming_meetings(meetings, now, window_minutes=60):\n    # TODO: return meetings starting within window_minutes from now\n    raise NotImplementedError('Filter meetings within time window')\n"
+        "name": "tracker.py",
+        "content": "from streaks import current_streak, longest_streak\nfrom weekly import completions_this_week, hit_target\n\n\nclass Tracker:\n    def __init__(self):\n        self.habits = {}\n\n    def add_habit(self, habit):\n        self.habits[habit.name] = habit\n\n    def log(self, habit_name, day):\n        h = self.habits.get(habit_name)\n        if h is None:\n            raise KeyError(habit_name)\n        h.log(day)\n\n    def overview(self, today):\n        # TODO STUB 5: Return a dict mapping each habit name to its overview:\n        #   { 'streak': int, 'this_week': int, 'on_target': bool, 'total': int }\n        raise NotImplementedError('tracker.overview')\n"
       }
     ],
     "test_file": {
       "name": "test_solution.py",
-      "content": "import datetime\nimport unittest\nfrom room import Room\nfrom scheduler import Scheduler\nfrom conflicts import detect_conflicts, find_free_slots\nfrom notifications import format_notification, batch_notifications, upcoming_meetings\n\n\n# CHECKPOINT 1\nclass TestOrientation(unittest.TestCase):\n    def test_room_book_and_cancel(self):\n        \"\"\"Basic room booking and cancellation should work\"\"\"\n        room = Room('R1', 'Alpha', 10)\n        start = datetime.datetime(2024, 6, 1, 9, 0)\n        end = datetime.datetime(2024, 6, 1, 10, 0)\n        room.book('M1', start, end, 'alice')\n        self.assertFalse(room.is_available(start, end))\n        room.cancel('M1')\n        self.assertTrue(room.is_available(start, end))\n\n    def test_scheduler_finds_room(self):\n        \"\"\"Scheduler should find and book an available room\"\"\"\n        s = Scheduler([Room('R1', 'Alpha', 10)])\n        start = datetime.datetime(2024, 6, 1, 9, 0)\n        end = datetime.datetime(2024, 6, 1, 10, 0)\n        mid = s.schedule_meeting('Standup', 5, start, end, 'alice')\n        self.assertEqual(mid, 'M1')\n\n\n# CHECKPOINT 2\nclass TestCoreFeature(unittest.TestCase):\n    def test_room_utilization(self):\n        \"\"\"Utilization should compute percentage of booked time in a day\"\"\"\n        room = Room('R1', 'Alpha', 10)\n        day = datetime.date(2024, 6, 1)\n        start = datetime.datetime(2024, 6, 1, 9, 0)\n        end = datetime.datetime(2024, 6, 1, 11, 0)\n        room.book('M1', start, end, 'alice')\n        util = room.utilization(day)\n        self.assertEqual(util, 0.25)\n\n    def test_find_free_slots(self):\n        \"\"\"find_free_slots should return available gaps\"\"\"\n        blocks = [\n            {'meeting_id': 'M1', 'start': datetime.datetime(2024, 6, 1, 9, 0), 'end': datetime.datetime(2024, 6, 1, 10, 0)},\n            {'meeting_id': 'M2', 'start': datetime.datetime(2024, 6, 1, 11, 0), 'end': datetime.datetime(2024, 6, 1, 12, 0)},\n        ]\n        day_start = datetime.datetime(2024, 6, 1, 8, 0)\n        day_end = datetime.datetime(2024, 6, 1, 17, 0)\n        slots = find_free_slots(blocks, day_start, day_end, 60)\n        self.assertEqual(len(slots), 2)\n        self.assertEqual(slots[0], (datetime.datetime(2024, 6, 1, 8, 0), datetime.datetime(2024, 6, 1, 9, 0)))\n\n\n# CHECKPOINT 3\nclass TestIntegration(unittest.TestCase):\n    def test_suggest_alternative(self):\n        \"\"\"suggest_alternative should return next available slot\"\"\"\n        room = Room('R1', 'Alpha', 10)\n        start = datetime.datetime(2024, 6, 1, 9, 0)\n        end = datetime.datetime(2024, 6, 1, 10, 0)\n        room.book('M1', start, end, 'alice')\n        s = Scheduler([room])\n        alt = s.suggest_alternative(5, start, end, 'bob')\n        self.assertIsNotNone(alt)\n        self.assertTrue(alt['start'] >= end)\n\n    def test_daily_overview(self):\n        \"\"\"daily_overview should group meetings by room\"\"\"\n        r1 = Room('R1', 'Alpha', 10)\n        r2 = Room('R2', 'Beta', 5)\n        s = Scheduler([r1, r2])\n        day = datetime.datetime(2024, 6, 1)\n        s.schedule_meeting('A', 5, datetime.datetime(2024, 6, 1, 9, 0), datetime.datetime(2024, 6, 1, 10, 0), 'alice')\n        s.schedule_meeting('B', 3, datetime.datetime(2024, 6, 1, 9, 0), datetime.datetime(2024, 6, 1, 10, 0), 'bob')\n        overview = s.daily_overview(day.date())\n        self.assertEqual(len(overview), 2)\n\n\n# CHECKPOINT 4\nclass TestPolish(unittest.TestCase):\n    def test_batch_notifications(self):\n        \"\"\"batch_notifications should return a list of notification dicts\"\"\"\n        meetings = [\n            {'title': 'A', 'start': datetime.datetime(2024, 6, 1, 10, 0), 'organizer': 'alice'},\n        ]\n        notes = batch_notifications(meetings)\n        self.assertEqual(len(notes), 1)\n        self.assertEqual(notes[0]['recipient'], 'alice')\n\n    def test_upcoming_meetings(self):\n        \"\"\"upcoming_meetings should filter by window\"\"\"\n        now = datetime.datetime(2024, 6, 1, 8, 0)\n        meetings = [\n            {'title': 'A', 'start': datetime.datetime(2024, 6, 1, 8, 30), 'organizer': 'alice'},\n            {'title': 'B', 'start': datetime.datetime(2024, 6, 1, 10, 0), 'organizer': 'bob'},\n        ]\n        upcoming = upcoming_meetings(meetings, now, 60)\n        self.assertEqual(len(upcoming), 1)\n        self.assertEqual(upcoming[0]['title'], 'A')\n\n    def test_detect_conflicts(self):\n        \"\"\"detect_conflicts should find overlapping meetings\"\"\"\n        blocks = [\n            {'meeting_id': 'M1', 'start': datetime.datetime(2024, 6, 1, 9, 0), 'end': datetime.datetime(2024, 6, 1, 11, 0)},\n            {'meeting_id': 'M2', 'start': datetime.datetime(2024, 6, 1, 10, 0), 'end': datetime.datetime(2024, 6, 1, 12, 0)},\n        ]\n        self.assertEqual(len(detect_conflicts(blocks)), 1)\n\n\nif __name__ == '__main__':\n    unittest.main()\n"
+      "content": "import unittest\nimport datetime\nfrom habit import Habit\nfrom streaks import current_streak, longest_streak\nfrom weekly import completions_this_week, hit_target, week_of\nfrom tracker import Tracker\n\n\ndef D(y, m, d):\n    return datetime.date(y, m, d)\n\n\ndef sample_habit():\n    h = Habit('read', target_per_week=5)\n    # Logged: May 27, 28, 29, 30, 31, Jun 1 (six consecutive days)\n    for day in range(27, 32):\n        h.log(D(2024, 5, day))\n    h.log(D(2024, 6, 1))\n    return h\n\n\n# CHECKPOINT 1\nclass TestStreaks(unittest.TestCase):\n    def test_current_streak_basic(self):\n        \"\"\"6 consecutive days ending today → streak 6\"\"\"\n        h = sample_habit()\n        self.assertEqual(current_streak(h, D(2024, 6, 1)), 6)\n\n    def test_current_streak_broken(self):\n        \"\"\"If today itself is unlogged, streak is 0\"\"\"\n        h = sample_habit()\n        self.assertEqual(current_streak(h, D(2024, 6, 2)), 0)\n\n    def test_longest_streak_simple(self):\n        \"\"\"6 consecutive days → longest 6\"\"\"\n        h = sample_habit()\n        self.assertEqual(longest_streak(h), 6)\n\n    def test_longest_streak_with_gap(self):\n        \"\"\"Streak resets after a gap\"\"\"\n        h = Habit('exercise')\n        for day in [1, 2, 3, 7, 8]:\n            h.log(D(2024, 6, day))\n        self.assertEqual(longest_streak(h), 3)\n\n\n# CHECKPOINT 2\nclass TestWeekly(unittest.TestCase):\n    def test_completions_this_week_partial(self):\n        \"\"\"today=Sat Jun 1 2024 (ISO week starting Mon May 27): 6 logged days\"\"\"\n        h = sample_habit()\n        self.assertEqual(completions_this_week(h, D(2024, 6, 1)), 6)\n\n    def test_completions_this_week_isolated_week(self):\n        \"\"\"A log in a previous week is not counted\"\"\"\n        h = Habit('test')\n        h.log(D(2024, 5, 20))  # previous week\n        h.log(D(2024, 5, 28))  # current week (Tue)\n        self.assertEqual(completions_this_week(h, D(2024, 6, 1)), 1)\n\n    def test_hit_target_true(self):\n        \"\"\"5 completions, target 5 → hit\"\"\"\n        h = sample_habit()  # 6 completions in week\n        self.assertTrue(hit_target(h, D(2024, 6, 1)))\n\n    def test_hit_target_false(self):\n        \"\"\"3 completions, target 5 → miss\"\"\"\n        h = Habit('miss', target_per_week=5)\n        for day in range(28, 31):\n            h.log(D(2024, 5, day))\n        self.assertFalse(hit_target(h, D(2024, 6, 1)))\n\n\n# CHECKPOINT 3 + 4\nclass TestTrackerOverview(unittest.TestCase):\n    def test_overview_includes_all_habits(self):\n        \"\"\"overview returns one entry per habit\"\"\"\n        t = Tracker()\n        t.add_habit(Habit('read', target_per_week=5))\n        t.add_habit(Habit('exercise', target_per_week=3))\n        t.log('read', D(2024, 6, 1))\n        result = t.overview(D(2024, 6, 1))\n        self.assertEqual(set(result.keys()), {'read', 'exercise'})\n\n    def test_overview_fields_present(self):\n        \"\"\"Each overview entry has streak/this_week/on_target/total keys\"\"\"\n        t = Tracker()\n        t.add_habit(Habit('read', target_per_week=5))\n        for day in range(28, 32):\n            t.log('read', D(2024, 5, day))\n        t.log('read', D(2024, 6, 1))\n        result = t.overview(D(2024, 6, 1))\n        entry = result['read']\n        self.assertEqual(entry['streak'], 5)\n        self.assertEqual(entry['this_week'], 5)\n        self.assertTrue(entry['on_target'])\n        self.assertEqual(entry['total'], 5)\n\n\nif __name__ == '__main__':\n    unittest.main()\n"
     },
+    "bugs": [],
     "stubs": [
-      {"file": "room.py", "function": "utilization", "description": "Calculate utilization percentage for a single day (0.0-1.0)"},
-      {"file": "conflicts.py", "function": "find_free_slots", "description": "Find all free time slots of at least duration minutes between day_start and day_end"},
-      {"file": "scheduler.py", "function": "suggest_alternative", "description": "If no room available, suggest next available slot in smallest fitting room"},
-      {"file": "scheduler.py", "function": "daily_overview", "description": "Return summary of all meetings on a given day grouped by room"},
-      {"file": "notifications.py", "function": "batch_notifications", "description": "Generate format_notification for each meeting in list"},
-      {"file": "notifications.py", "function": "upcoming_meetings", "description": "Filter meetings starting within window_minutes from now"}
+      {
+        "file": "streaks.py",
+        "function": "current_streak",
+        "description": "Consecutive days ending at today; 0 if today missing"
+      },
+      {
+        "file": "streaks.py",
+        "function": "longest_streak",
+        "description": "Longest consecutive run anywhere in completions"
+      },
+      {
+        "file": "weekly.py",
+        "function": "completions_this_week",
+        "description": "Count completions in the same Mon-Sun ISO week as today"
+      },
+      {
+        "file": "weekly.py",
+        "function": "hit_target",
+        "description": "True if completions_this_week >= target_per_week"
+      },
+      {
+        "file": "tracker.py",
+        "function": "overview",
+        "description": "Per-habit summary dict: streak, this_week, on_target, total"
+      }
     ],
     "checkpoints": [
-      {"id": 1, "title": "Orientation", "ai_enabled": false, "task": "Read the codebase. Run the tests to see what is failing. Write a comment at the top of scheduler.py explaining the architecture in your own words."},
-      {"id": 2, "title": "Core Feature", "ai_enabled": true, "task": "Implement stub #1 (room.utilization) and stub #2 (find_free_slots). Utilization should compute the fraction of 8am-6pm that is booked. find_free_slots should return a list of (start, end) tuples."},
-      {"id": 3, "title": "Integration", "ai_enabled": true, "task": "Implement stub #3 (suggest_alternative) and stub #4 (daily_overview). suggest_alternative should find the next available 1-hour slot starting from the original start time. daily_overview should return a dict mapping room_id to list of meetings."},
-      {"id": 4, "title": "Polish", "ai_enabled": true, "task": "Implement stub #5 (batch_notifications) and stub #6 (upcoming_meetings). Add validation to schedule_meeting so it rejects end times before start times."}
-    ],
-    "bugs": []
+      {
+        "id": 1,
+        "title": "Streaks",
+        "ai_enabled": false,
+        "task": "Implement current_streak and longest_streak in streaks.py. Think about when a streak resets. Do NOT use the AI assistant."
+      },
+      {
+        "id": 2,
+        "title": "Weekly View",
+        "ai_enabled": true,
+        "task": "Implement completions_this_week and hit_target in weekly.py. Use week_of() to determine the Monday of any given date."
+      },
+      {
+        "id": 3,
+        "title": "Tracker Overview",
+        "ai_enabled": true,
+        "task": "Implement Tracker.overview to combine streak/weekly/total info for every habit."
+      },
+      {
+        "id": 4,
+        "title": "Polish",
+        "ai_enabled": true,
+        "task": "Verify all tests pass. Add a defensive check in Tracker.log if the habit is missing (already raises KeyError). Run the full suite and explain how each piece fits together in the chat."
+      }
+    ]
   }
 ]

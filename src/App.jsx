@@ -67,10 +67,17 @@ export default function App() {
   // Pyodide
   const { status: pyodideStatus, error: pyodideError, runTests, runFile } = usePyodide();
 
-  // Run-code output + Cmd+S toast
+  // Run-code output
   const [runOutput, setRunOutput] = useState(null); // { stdout, stderr }
   const [runningCode, setRunningCode] = useState(false);
-  const [saveToast, setSaveToast] = useState(null);
+
+  // Autosave (debounced) — each per-file timer commits the dirty content into
+  // `originalContent` so the yellow dot clears within 500ms of typing stopping.
+  const autosaveTimersRef = useRef({});
+  function cancelAllAutosaveTimers() {
+    for (const t of Object.values(autosaveTimersRef.current)) clearTimeout(t);
+    autosaveTimersRef.current = {};
+  }
 
   // Timers — single interval drives both session countdown + checkpoint counter
   useEffect(() => {
@@ -171,12 +178,16 @@ export default function App() {
   }
 
   function hydrateProblem(modeIdToUse, data, generated = false) {
+    cancelAllAutosaveTimers();
     setModeId(modeIdToUse);
     setProblem(data);
     setProblemId(data.id || null);
     setProblemGenerated(generated);
     setFiles(data.files.map((f) => ({ name: f.name, content: f.content })));
-    setActiveFile(data.files[0]?.name || null);
+    // Prefer README.md as the landing tab so candidates orient on the
+    // problem context before touching code.
+    const readme = data.files.find((f) => f.name === 'README.md');
+    setActiveFile(readme?.name || data.files[0]?.name || null);
     const baseline = {};
     for (const f of data.files) baseline[f.name] = f.content;
     setOriginalContent(baseline);
@@ -207,6 +218,16 @@ export default function App() {
 
   function handleEditorChange(fileName, content) {
     setFiles((prev) => prev.map((f) => (f.name === fileName ? { ...f, content } : f)));
+    // Debounced autosave — 500ms after the last keystroke on this file, sync
+    // the baseline so the dirty indicator clears. The file state itself was
+    // already updated synchronously above, so Run / Run Tests always see the
+    // freshest content.
+    const timers = autosaveTimersRef.current;
+    if (timers[fileName]) clearTimeout(timers[fileName]);
+    timers[fileName] = setTimeout(() => {
+      setOriginalContent((prev) => ({ ...prev, [fileName]: content }));
+      delete timers[fileName];
+    }, 500);
   }
 
   function handleMarkComplete() {
@@ -269,11 +290,6 @@ export default function App() {
       setRunningCode(false);
     }
   }, [problem, pyodideStatus, runningCode, runningTests, files, runFile]);
-
-  function handleSave(fileName) {
-    setSaveToast(`Saved ${fileName}`);
-    setTimeout(() => setSaveToast(null), 1400);
-  }
 
   function handleNewProblem(newModeId, hint) {
     setNewProblemOpen(false);
@@ -398,7 +414,6 @@ export default function App() {
               onChange={handleEditorChange}
               onTabPick={setActiveFile}
               dirtyFiles={dirtyFiles}
-              onSave={handleSave}
             />
           </div>
           <Terminal
@@ -450,14 +465,6 @@ export default function App() {
 
       {historyOpen && (
         <HistoryModal onClose={() => setHistoryOpen(false)} onReplay={replayProblem} />
-      )}
-
-      {saveToast && (
-        <div className="fixed top-16 left-1/2 -translate-x-1/2 bg-bg-700 border border-bg-600 px-4 py-2 rounded text-sm text-gray-200 shadow-lg z-50 animate-slideIn flex items-center gap-2">
-          <span className="text-green-400">✓</span>
-          <span>{saveToast}</span>
-          <span className="text-[10px] text-gray-500 font-mono">⌘S</span>
-        </div>
       )}
     </div>
   );

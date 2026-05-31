@@ -4,6 +4,34 @@
     "domain": "Library Reservation Backend",
     "files": [
       {
+        "name": "README.md",
+        "content": "# Library Reservation Backend\n\nWelcome to the Loanstack team! Loanstack is the backend powering reservations\nfor a small public library system. Members place holds on books, the system\ntracks active loans, and reports surface popular titles and per-member\nactivity to librarians.\n\n## Project Structure\n\n```\nmodels.py    — Book, Member, Reservation domain classes\npolicies.py  — borrowing limits and late-fee rules\nlibrary.py   — Library aggregate: add/reserve/return + queries\nreports.py   — read-only reporting helpers (popular books, member summary)\nmain.py      — runnable demo exercising every section\nexpected_output.txt — what main.py SHOULD print\ntickets/     — bugs filed against this service\n```\n\n## Architecture\n\n```\n            main.py / tests\n                  │\n                  ▼\n           ┌──────────────┐\n           │  Library     │  reserve / return / queries\n           └──────┬───────┘\n                  │ uses\n        ┌─────────┼─────────┐\n        ▼         ▼         ▼\n     models    policies   reports\n```\n\n- **models.py** — plain data classes. `Book.is_available()` is the canonical\n  \"can someone reserve this?\" check.\n- **policies.py** — policy functions only. Library and reports both read from\n  here so the rules live in one place.\n- **library.py** — the aggregate. Owns the dicts of books/members and the\n  reservation list.\n- **reports.py** — pure functions over a Library. Never mutates.\n\n## How to work this problem\n\n1. Read `README.md` (you're here), then skim the tickets in `tickets/`.\n2. Run `main.py` and compare against `expected_output.txt`.\n3. Each diverging section maps to one or more tickets — fix one at a time.\n4. Run `test_solution.py` to verify your fix didn't regress anything.\n\n## Known Issues\n\nFiled in `tickets/`:\n\n- **LIB-401** — Single-copy book reports as unavailable\n- **LIB-402** — Silver and gold members get the wrong borrowing limit\n- **LIB-403** — Late fees seem way too high\n- **LIB-404** — Reservation history leaks between unrelated callers\n- **LIB-405** — `popular_books` returns the least-popular titles first\n- **LIB-406** — `member_summary` returns nothing\n"
+      },
+      {
+        "name": "tickets/LIB-401.md",
+        "content": "# LIB-401: Single-copy book reports as unavailable\n\n**Status:** Open\n**Priority:** P1\n**Component:** Reservations / Catalog\n**Reporter:** branch-librarian@loanstack\n\n## Description\n\nA book with exactly one copy in stock cannot be reserved. The catalog page\nshows it as \"unavailable\" even though no one has it out.\n\n## Steps to reproduce\n\n1. Add a new `Book` with `total_copies=1` and zero reservations.\n2. Call `book.is_available()`.\n\n## Expected behavior\n\nA book with 1 copy available should be reservable, same as a book with 5\ncopies available.\n\n## Observed behavior\n\n`is_available()` returns `False` for the single-copy case.\n"
+      },
+      {
+        "name": "tickets/LIB-402.md",
+        "content": "# LIB-402: Silver and gold members get the wrong borrowing limit\n\n**Status:** Open\n**Priority:** P1\n**Component:** Policies\n**Reporter:** ops@loanstack\n\n## Description\n\n`max_books_allowed` is supposed to return 10 for premium tiers (silver, gold)\nand 3 for basic. We have reports that basic-tier members are being allowed\nto reserve far more than 3 books simultaneously.\n\n## Steps to reproduce\n\n1. Create a basic-tier member.\n2. Call `max_books_allowed(member)`.\n\n## Expected behavior\n\nbasic → 3, silver → 10, gold → 10.\n\n## Observed behavior\n\nbasic members appear to share the premium limit. Something in\n`policies.max_books_allowed` is matching every member.\n"
+      },
+      {
+        "name": "tickets/LIB-403.md",
+        "content": "# LIB-403: Late fees seem way too high\n\n**Status:** Open\n**Priority:** P0\n**Component:** Policies / Billing\n**Reporter:** finance@loanstack\n\n## Description\n\nA member returned a book 5 days late (grace period = 3 days) and was billed\n$2.50. They expected to pay $1.00 — two days past the grace period at $0.50\nper day.\n\n## Steps to reproduce\n\n```python\nfrom policies import late_fee\nlate_fee(5, grace_period=3)\n```\n\n## Expected behavior\n\n5 days late, 3 of which are inside the grace period → 2 chargeable days\n× $0.50 = **$1.00**.\n\n## Observed behavior\n\nReturns $2.50 — the function appears to charge for every late day, ignoring\nthe grace window.\n"
+      },
+      {
+        "name": "tickets/LIB-404.md",
+        "content": "# LIB-404: Reservation history leaks between unrelated callers\n\n**Status:** Open\n**Priority:** P1\n**Component:** Library API\n**Reporter:** integration-team@loanstack\n\n## Description\n\nWe added an optional `history` argument to `Library.reserve` so callers\ncould collect an audit trail. Two integration tests against fresh\n`Library` instances are reporting state from previous test runs.\n\n## Steps to reproduce\n\n```python\nlib.reserve('X', 'Z', history=[])  # caller A passes an empty list\n# ... later, in a totally separate test ...\nlib.reserve('X', 'Z', history=[])  # caller B's list is somehow non-empty\n```\n\n## Expected behavior\n\nEach caller's `history` list contains only the reservations from their own\ncall.\n\n## Observed behavior\n\nThe default `history` value appears to be **shared** across every call to\n`reserve`. New entries pile up over time.\n"
+      },
+      {
+        "name": "tickets/LIB-405.md",
+        "content": "# LIB-405: popular_books returns the least-popular titles\n\n**Status:** Open\n**Priority:** P2\n**Component:** Reports\n**Reporter:** product@loanstack\n\n## Description\n\nThe \"Most Popular This Month\" widget on the homepage is showing books that\nhave been reserved zero or one times. `popular_books(library, top_n=3)` is\nreturning the wrong end of the ranking.\n\n## Expected behavior\n\n`popular_books(top_n=3)` returns the **3 most-reserved** books, highest\nreservation count first.\n\n## Observed behavior\n\nIt returns books in ascending order of reservation count — least popular\nfirst.\n"
+      },
+      {
+        "name": "tickets/LIB-406.md",
+        "content": "# LIB-406: member_summary returns nothing\n\n**Status:** Open\n**Priority:** P1\n**Component:** Reports\n**Reporter:** support@loanstack\n\n## Description\n\nThe \"My Account\" page is showing an empty summary box for every member.\n`reports.member_summary(library, member_id)` is returning `None` even when\nthe member has active reservations.\n\n## Expected behavior\n\nA dict with keys `member_id`, `active_count`, `book_ids`.\n\n## Observed behavior\n\n`None`.\n"
+      },
+      {
         "name": "models.py",
         "content": "class Book:\n    def __init__(self, book_id, title, total_copies):\n        self.book_id = book_id\n        self.title = title\n        self.total_copies = total_copies\n        self.copies_reserved = 0\n\n    def available_copies(self):\n        return self.total_copies - self.copies_reserved\n\n    def is_available(self):\n        return self.available_copies() > 1\n\n\nclass Member:\n    def __init__(self, member_id, name, tier='basic'):\n        self.member_id = member_id\n        self.name = name\n        self.tier = tier\n\n\nclass Reservation:\n    def __init__(self, book_id, member_id, reserved_on, due_date):\n        self.book_id = book_id\n        self.member_id = member_id\n        self.reserved_on = reserved_on\n        self.due_date = due_date\n        self.returned = False\n"
       },
@@ -64,19 +92,19 @@
         "id": 1,
         "title": "Orientation",
         "ai_enabled": false,
-        "task": "Open expected_output.txt and run main.py. Compare. Then run the tests. Fix the two bugs in Section A and Section B of main.py output. Do NOT use the AI assistant."
+        "task": "Read README.md and the tickets in tickets/. Run main.py and diff against expected_output.txt. Fix the bugs surfacing in Section A (LIB-401) and Section B (LIB-402). Do NOT use the AI assistant."
       },
       {
         "id": 2,
         "title": "Reservation Flow",
         "ai_enabled": true,
-        "task": "Diagnose why Section C diverges from expected, and fix it. Verify the two reservation-flow tests pass."
+        "task": "Diagnose why Section C diverges and fix the issues described in LIB-404. Verify the two reservation-flow tests pass."
       },
       {
         "id": 3,
         "title": "Policies & Reports",
         "ai_enabled": true,
-        "task": "Fix Sections D and E (late fees, popular books, member summary). Explain each fix in chat."
+        "task": "Resolve LIB-403, LIB-405, and LIB-406 (late fees, popular books, member summary). Explain each fix in chat."
       },
       {
         "id": 4,
@@ -90,6 +118,30 @@
     "id": "bug_hunt:seed:queue",
     "domain": "Support Ticket Queue Backend",
     "files": [
+      {
+        "name": "README.md",
+        "content": "# Support Ticket Queue\n\nWelcome to the Helpdesk team! This service routes inbound support tickets to\navailable agents. Customers create tickets via a web form; agents pull them\noff a priority queue. Reports power the on-call dashboard and weekly load\nreview.\n\n## Project Structure\n\n```\nticket.py    — Ticket model (id, customer, priority, status, events)\nagent.py     — Agent model (id, max_load, active_tickets)\nqueue.py     — TicketQueue: submit / register agents / pick & assign next\nreports.py   — agent_load_report, open_ticket_count, average_priority\nmain.py      — runnable demo exercising every section\nexpected_output.txt — what main.py SHOULD print\ntickets/     — bugs filed against this service\n```\n\n## Architecture\n\n```\n   web form ──► TicketQueue.submit(ticket)\n                       │\n                       ▼\n        TicketQueue.next_unassigned()  ◄── priority order\n                       │\n                       ▼\n        TicketQueue.assign_next()  ──► picks an Agent with capacity\n                       │\n                       ▼\n                Ticket.assign(agent_id)\n```\n\n- **Priority convention:** lower number = more urgent (1 is the most urgent).\n- **Statuses:** `open` → `closed`. No other states.\n- **Reports** are pure functions over a TicketQueue — never mutate.\n\n## How to work this problem\n\n1. Read this README, then skim `tickets/`.\n2. Run `main.py` and compare its output to `expected_output.txt`.\n3. Each divergent section maps to one or more filed tickets.\n4. `test_solution.py` is the source of truth for \"fixed\".\n\n## Known Issues\n\n- **TICKET-501** — Closed tickets aren't reported as closed\n- **TICKET-502** — Agents are accepting one too many tickets\n- **TICKET-503** — Queue picks the wrong ticket first\n- **TICKET-504** — `open_ticket_count` includes closed tickets\n- **TICKET-505** — `average_priority` loses fractional values\n"
+      },
+      {
+        "name": "tickets/TICKET-501.md",
+        "content": "# TICKET-501: Closed tickets aren't reported as closed\n\n**Status:** Open\n**Priority:** P0\n**Component:** Ticket model\n**Reporter:** dashboard-team@helpdesk\n\n## Description\n\nThe agent dashboard groups tickets by status. We're seeing a column called\n\"close\" with no items in our standard \"closed\" filter — tickets that were\nclosed are landing in a separate bucket.\n\n## Steps to reproduce\n\n```python\nt = Ticket('X', 'C', 1, 'demo')\nt.close()\nprint(t.status, t.is_open())\n```\n\n## Expected behavior\n\n`status == 'closed'`, `is_open() == False`.\n\n## Observed behavior\n\n`status` is some other string, so the existing `is_open()` check returns\n`True` (incorrectly) and dashboards group the ticket as \"open\".\n"
+      },
+      {
+        "name": "tickets/TICKET-502.md",
+        "content": "# TICKET-502: Agents are accepting one too many tickets\n\n**Status:** Open\n**Priority:** P1\n**Component:** Agent capacity\n**Reporter:** ops@helpdesk\n\n## Description\n\nAgents configured with `max_load=N` are ending up with `N+1` active tickets\nduring peak hours. We expected the capacity check to refuse the (N+1)th\nassignment, but it doesn't.\n\n## Steps to reproduce\n\n```python\na = Agent('A', 'X', max_load=2)\na.active_tickets = ['t1', 't2']  # already at cap\na.can_take(Ticket('T', 'C', 1, 'x'))\n```\n\n## Expected behavior\n\n`can_take` returns `False` when `len(active_tickets) == max_load`.\n\n## Observed behavior\n\nReturns `True` — the agent gets handed yet another ticket.\n"
+      },
+      {
+        "name": "tickets/TICKET-503.md",
+        "content": "# TICKET-503: Queue picks the wrong ticket first\n\n**Status:** Open\n**Priority:** P1\n**Component:** Queue ordering\n**Reporter:** product@helpdesk\n\n## Description\n\nWe expect the queue to surface the most-urgent ticket first. With priorities\n`{T1: 3, T2: 1, T3: 5}`, calling `next_unassigned()` should return T2.\nIt's returning T3.\n\n## Reminder about priority\n\nLower number = more urgent. So priority **1** is more urgent than priority 5.\n\n## Observed behavior\n\n`next_unassigned()` returns the **least** urgent ticket.\n"
+      },
+      {
+        "name": "tickets/TICKET-504.md",
+        "content": "# TICKET-504: open_ticket_count includes closed tickets\n\n**Status:** Open\n**Priority:** P2\n**Component:** Reports\n**Reporter:** sla-team@helpdesk\n\n## Description\n\nOur SLA dashboard treats `open_ticket_count` as the number of tickets\ncurrently needing attention. After a busy week of closed tickets, the\ncounter keeps climbing instead of resetting to roughly steady-state.\n\n## Expected behavior\n\nClosed tickets must NOT be counted.\n\n## Observed behavior\n\n`open_ticket_count` returns the total number of tickets ever submitted.\n"
+      },
+      {
+        "name": "tickets/TICKET-505.md",
+        "content": "# TICKET-505: average_priority loses fractional values\n\n**Status:** Open\n**Priority:** P2\n**Component:** Reports\n**Reporter:** analytics@helpdesk\n\n## Description\n\nThe \"Avg Priority\" cell on the weekly load report always shows an integer.\nFor a queue with priorities [1, 2] we expect 1.5 but we see 1.\n\n## Expected behavior\n\n`average_priority` returns a float — true mean of the priorities, not the\ntruncated integer mean.\n\n## Observed behavior\n\nReturns an int rounded toward zero.\n"
+      },
       {
         "name": "ticket.py",
         "content": "class Ticket:\n    def __init__(self, ticket_id, customer_id, priority, subject):\n        self.ticket_id = ticket_id\n        self.customer_id = customer_id\n        self.priority = priority\n        self.subject = subject\n        self.status = 'open'\n        self.assigned_to = None\n        self.events = []\n\n    def assign(self, agent_id):\n        self.assigned_to = agent_id\n        self.events.append(('assigned', agent_id))\n\n    def close(self):\n        self.status = 'close'\n        self.events.append(('closed',))\n\n    def is_open(self):\n        return self.status == 'open'\n"
@@ -147,19 +199,19 @@
         "id": 1,
         "title": "Orientation",
         "ai_enabled": false,
-        "task": "Open expected_output.txt and run main.py to compare. Fix the bugs surfacing in Section A (queue picking) and Section B (closing). Do NOT use the AI assistant."
+        "task": "Read README.md and the tickets in tickets/. Run main.py and diff against expected_output.txt. Fix the issues described in TICKET-501 (Section B) and TICKET-503 (Section A). Do NOT use the AI assistant."
       },
       {
         "id": 2,
         "title": "Queue Ordering",
         "ai_enabled": true,
-        "task": "Investigate the assignment-distribution gap in Section C and the capacity check that drives it."
+        "task": "Resolve TICKET-502 (agent capacity) and verify Section C now distributes correctly."
       },
       {
         "id": 3,
         "title": "Reports",
         "ai_enabled": true,
-        "task": "Fix Sections D and E in reports.py. Explain why integer division is the wrong tool here."
+        "task": "Fix TICKET-504 and TICKET-505 in reports.py. Explain why integer division is the wrong tool here."
       },
       {
         "id": 4,

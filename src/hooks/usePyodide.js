@@ -61,7 +61,13 @@ export function usePyodide() {
       }
     } catch (_) {}
 
+    // Only .py files matter to the test runner. Documentation files (README.md,
+    // tickets/*.md, expected_output.txt) live in the project tree but aren't
+    // imported by unittest, and writing nested paths would require mkdir-ing
+    // parent directories. Skipping them sidesteps both issues.
     for (const [name, content] of Object.entries(fileMap)) {
+      if (!name.endsWith('.py')) continue;
+      if (name.includes('/')) continue; // defensive: never nest in workdir
       py.FS.writeFile(`${workdir}/${name}`, content);
     }
     py.FS.writeFile(`${workdir}/${testFile.name}`, testFile.content);
@@ -125,8 +131,9 @@ finally:
       }
     } catch (_) {}
     for (const [name, content] of Object.entries(fileMap)) {
-      // Skip non-source files
+      // Skip non-source files and nested paths (no mkdir-p in pyodide FS)
       if (!name.endsWith('.py')) continue;
+      if (name.includes('/')) continue;
       py.FS.writeFile(`${workdir}/${name}`, content);
     }
     await py.runPythonAsync(`

@@ -4,24 +4,52 @@
     "domain": "Personal Finance Tracker",
     "files": [
       {
+        "name": "README.md",
+        "content": "# Personal Finance Tracker\n\nWelcome to the Wallet team! Wallet is a personal-finance tracker. Users\nrecord transactions (income or expense), tag them with categories, and view\nmonthly budget summaries. The data model is already in place; several\nfeature methods are stubbed and need implementation.\n\n## Project Structure\n\n```\ntransaction.py  — Transaction model (id, amount, description, date, category)\naccount.py      — Account: balance + windowed queries (TWO STUBS)\ncategories.py   — Keyword-based auto-categorization (ONE STUB)\nbudget.py       — Budget limits and per-category over/under (ONE STUB)\nreports.py      — Monthly summary + daily-spend reports (TWO STUBS)\ntickets/        — feature tickets, one per stub\n```\n\n## Architecture\n\n```\nTransaction ──► Account ──► Reports / Budget\n                  │              │\n                  └─► categories.auto_categorize\n```\n\n- **Amount convention:** positive = income, negative = expense.\n- **Deterministic dates:** tests pass an explicit `today` so stubs that take\n  \"the last N days\" should accept and respect that argument; default to\n  `datetime.date(2024, 6, 1)` when not supplied.\n\n## Conventions\n\n- Stubs raise `NotImplementedError` until you fill them in.\n- Each stub's docstring/comment block names the behavior — read it before\n  coding.\n- Tests in `test_solution.py` cover all four checkpoints. Every test\n  currently fails because every code path goes through at least one stub.\n\n## Tickets\n\n- **FIN-001** — Implement `Account.balance`\n- **FIN-002** — Implement `Account.last_n_days`\n- **FIN-003** — Implement `auto_categorize`\n- **FIN-004** — Implement `Budget.over_under`\n- **FIN-005** — Implement `monthly_summary`\n- **FIN-006** — Implement `average_daily_spend` (and its validation)\n"
+      },
+      {
+        "name": "tickets/FIN-001.md",
+        "content": "# FIN-001: Implement Account.balance\n\n**Status:** To Do\n**Priority:** P0\n**Component:** Account\n**File:** `account.py`\n\n## Background\n\n`Account` holds a starting balance and a list of `Transaction` objects.\nWe need a `balance()` method that returns the current balance.\n\n## Acceptance criteria\n\n- `Account('x', starting_balance=250.0)` with no transactions → `balance() == 250.0`\n- For each transaction, `amount` is positive for income or negative for\n  expense — so the running balance is `starting_balance + sum(amounts)`.\n- Return type: `float`.\n"
+      },
+      {
+        "name": "tickets/FIN-002.md",
+        "content": "# FIN-002: Implement Account.last_n_days\n\n**Status:** To Do\n**Priority:** P0\n**Component:** Account\n**File:** `account.py`\n\n## Background\n\nSeveral reports need \"transactions in the last N days\". Implement a windowed\nquery on `Account` that filters by date.\n\n## Acceptance criteria\n\n- Signature: `last_n_days(n, today=None)`.\n- If `today is None`, default to `datetime.date(2024, 6, 1)` so tests are\n  deterministic.\n- Window is **inclusive on both ends**: `today - (n - 1) <= tx.date <= today`.\n- Returns a list of `Transaction` objects (order can match insertion order).\n\n### Example\n\n`last_n_days(3, today=date(2024, 6, 1))` includes transactions dated\n`5/30`, `5/31`, and `6/1`.\n"
+      },
+      {
+        "name": "tickets/FIN-003.md",
+        "content": "# FIN-003: Implement auto_categorize\n\n**Status:** To Do\n**Priority:** P1\n**Component:** Categorization\n**File:** `categories.py`\n\n## Background\n\nTransactions arrive without a category set. We have a keyword map\n(`KEYWORDS`) like:\n\n```python\n{'groceries': ['supermarket', 'grocery', 'whole foods', 'trader joe'], ...}\n```\n\nAuto-categorize by matching the transaction's `description` against the\nkeywords.\n\n## Acceptance criteria\n\n- Match is **case-insensitive substring**.\n- Return the **first** category that has any keyword matching.\n- If nothing matches, return `'uncategorized'`.\n\n### Example\n\n- \"Whole Foods Market\" → `groceries`\n- \"COFFEE break at office\" → `dining`\n- \"Mystery vendor\" → `uncategorized`\n"
+      },
+      {
+        "name": "tickets/FIN-004.md",
+        "content": "# FIN-004: Implement Budget.over_under\n\n**Status:** To Do\n**Priority:** P1\n**Component:** Budget\n**File:** `budget.py`\n\n## Background\n\n`Budget` holds per-category monthly limits. We need a function that returns\nremaining budget per category for a given (year, month).\n\n## Acceptance criteria\n\n- For each category in `self.limits`, compute the absolute total of expense\n  transactions in that (year, month) tagged with the category.\n- Return `{ category: limit - spent }` — positive = under budget,\n  negative = over.\n- Categories with **no** matching transactions still appear in the result\n  (with the full limit remaining).\n"
+      },
+      {
+        "name": "tickets/FIN-005.md",
+        "content": "# FIN-005: Implement monthly_summary\n\n**Status:** To Do\n**Priority:** P1\n**Component:** Reports\n**File:** `reports.py`\n\n## Background\n\nThe monthly view needs income, expense, net, and a per-category expense\nbreakdown — all for one (year, month).\n\n## Acceptance criteria\n\n`monthly_summary(account, year, month)` returns a dict with keys:\n\n- `income` — sum of positive amounts that month\n- `expenses` — **absolute** sum of negative amounts that month\n- `net` — `income - expenses`\n- `by_category` — dict mapping each category (or `'uncategorized'`) to its\n  total expense in that month\n\nOnly consider transactions whose `date` falls in the given month.\n"
+      },
+      {
+        "name": "tickets/FIN-006.md",
+        "content": "# FIN-006: Implement average_daily_spend\n\n**Status:** To Do\n**Priority:** P2\n**Component:** Reports\n**File:** `reports.py`\n\n## Background\n\nReturns the average daily expense over the last `n_days`, useful for the\n\"burn rate\" widget.\n\n## Acceptance criteria\n\n- Signature: `average_daily_spend(account, n_days, today=None)`.\n- Same `today` default as `Account.last_n_days` (use\n  `datetime.date(2024, 6, 1)`).\n- Returns `total_expense / n_days` as a float, where `total_expense` is the\n  absolute sum of expense amounts in the window.\n- If `n_days <= 0`, raise `ValueError`.\n"
+      },
+      {
         "name": "transaction.py",
         "content": "import datetime\n\n\nclass Transaction:\n    def __init__(self, tx_id, amount, description, date, category=None):\n        self.tx_id = tx_id\n        # amount: positive for income, negative for expense\n        self.amount = amount\n        self.description = description\n        self.date = date\n        self.category = category\n\n    def is_expense(self):\n        return self.amount < 0\n\n    def is_income(self):\n        return self.amount > 0\n"
       },
       {
         "name": "account.py",
-        "content": "import datetime\n\n\nclass Account:\n    def __init__(self, name, starting_balance=0.0):\n        self.name = name\n        self.starting_balance = starting_balance\n        self.transactions = []\n\n    def add(self, transaction):\n        self.transactions.append(transaction)\n\n    def balance(self):\n        # TODO STUB 1: Return the current balance.\n        # Starting balance plus the sum of every transaction amount.\n        raise NotImplementedError('account.balance')\n\n    def last_n_days(self, n, today=None):\n        # TODO STUB 2: Return transactions whose date is within the last n days from 'today'.\n        # If today is None, use datetime.date(2024, 6, 1) as the reference point so tests are deterministic.\n        # The window is inclusive on both ends: today - (n-1) <= tx.date <= today.\n        raise NotImplementedError('account.last_n_days')\n"
+        "content": "import datetime\n\n\nclass Account:\n    def __init__(self, name, starting_balance=0.0):\n        self.name = name\n        self.starting_balance = starting_balance\n        self.transactions = []\n\n    def add(self, transaction):\n        self.transactions.append(transaction)\n\n    def balance(self):\n        # TODO STUB 1 (FIN-001): Return the current balance.\n        # Starting balance plus the sum of every transaction amount.\n        raise NotImplementedError('account.balance')\n\n    def last_n_days(self, n, today=None):\n        # TODO STUB 2 (FIN-002): Return transactions whose date is within\n        # the last n days from 'today'. If today is None, use\n        # datetime.date(2024, 6, 1) as the reference point so tests are\n        # deterministic. The window is inclusive on both ends:\n        # today - (n-1) <= tx.date <= today.\n        raise NotImplementedError('account.last_n_days')\n"
       },
       {
         "name": "categories.py",
-        "content": "KEYWORDS = {\n    'groceries': ['supermarket', 'grocery', 'whole foods', 'trader joe'],\n    'rent': ['rent', 'landlord', 'apartment'],\n    'transport': ['uber', 'lyft', 'gas', 'metro', 'subway'],\n    'dining': ['restaurant', 'cafe', 'coffee', 'pizza'],\n    'utilities': ['electric', 'water', 'internet', 'gas bill'],\n}\n\n\ndef auto_categorize(transaction):\n    # TODO STUB 3: Inspect transaction.description (case-insensitive).\n    # Return the first category whose any keyword appears as a substring of the description.\n    # If nothing matches, return 'uncategorized'.\n    raise NotImplementedError('categories.auto_categorize')\n"
+        "content": "KEYWORDS = {\n    'groceries': ['supermarket', 'grocery', 'whole foods', 'trader joe'],\n    'rent': ['rent', 'landlord', 'apartment'],\n    'transport': ['uber', 'lyft', 'gas', 'metro', 'subway'],\n    'dining': ['restaurant', 'cafe', 'coffee', 'pizza'],\n    'utilities': ['electric', 'water', 'internet', 'gas bill'],\n}\n\n\ndef auto_categorize(transaction):\n    # TODO STUB 3 (FIN-003): Inspect transaction.description\n    # (case-insensitive). Return the first category whose any keyword\n    # appears as a substring of the description. If nothing matches,\n    # return 'uncategorized'.\n    raise NotImplementedError('categories.auto_categorize')\n"
       },
       {
         "name": "budget.py",
-        "content": "class Budget:\n    def __init__(self):\n        self.limits = {}  # category -> monthly limit (positive number, in dollars spent)\n\n    def set_limit(self, category, monthly_limit):\n        self.limits[category] = monthly_limit\n\n    def over_under(self, account, year, month):\n        # TODO STUB 4: For each category in self.limits, compute:\n        #   spent = sum of |amount| for expense transactions in (year, month) of that category\n        # Return a dict: { category: limit - spent }\n        # Positive values mean under budget; negative mean over.\n        # Categories with no transactions still appear (full limit available).\n        raise NotImplementedError('budget.over_under')\n"
+        "content": "class Budget:\n    def __init__(self):\n        self.limits = {}  # category -> monthly limit (positive number, in dollars spent)\n\n    def set_limit(self, category, monthly_limit):\n        self.limits[category] = monthly_limit\n\n    def over_under(self, account, year, month):\n        # TODO STUB 4 (FIN-004): For each category in self.limits, compute:\n        #   spent = sum of |amount| for expense transactions in (year, month) of that category\n        # Return a dict: { category: limit - spent }\n        # Positive values mean under budget; negative mean over.\n        # Categories with no transactions still appear (full limit available).\n        raise NotImplementedError('budget.over_under')\n"
       },
       {
         "name": "reports.py",
-        "content": "from collections import defaultdict\n\n\ndef monthly_summary(account, year, month):\n    # TODO STUB 5: Return a dict with these keys:\n    #   'income'   — sum of positive amounts that month\n    #   'expenses' — absolute sum of negative amounts that month\n    #   'net'      — income - expenses\n    #   'by_category' — dict mapping each category (or 'uncategorized') to total expense in that category\n    raise NotImplementedError('reports.monthly_summary')\n\n\ndef average_daily_spend(account, n_days, today=None):\n    # TODO STUB 6: Compute average daily expense over the last n_days.\n    # Use the same 'today' default (datetime.date(2024, 6, 1)) as account.last_n_days.\n    # Return total_expense / n_days as a float. If n_days <= 0, raise ValueError.\n    raise NotImplementedError('reports.average_daily_spend')\n"
+        "content": "from collections import defaultdict\n\n\ndef monthly_summary(account, year, month):\n    # TODO STUB 5 (FIN-005): Return a dict with these keys:\n    #   'income'   — sum of positive amounts that month\n    #   'expenses' — absolute sum of negative amounts that month\n    #   'net'      — income - expenses\n    #   'by_category' — dict mapping each category (or 'uncategorized')\n    #                   to total expense in that category\n    raise NotImplementedError('reports.monthly_summary')\n\n\ndef average_daily_spend(account, n_days, today=None):\n    # TODO STUB 6 (FIN-006): Compute average daily expense over the last\n    # n_days. Use the same 'today' default (datetime.date(2024, 6, 1)) as\n    # account.last_n_days. Return total_expense / n_days as a float. If\n    # n_days <= 0, raise ValueError.\n    raise NotImplementedError('reports.average_daily_spend')\n"
       }
     ],
     "test_file": {
@@ -66,25 +94,25 @@
         "id": 1,
         "title": "Foundation",
         "ai_enabled": false,
-        "task": "Implement Account.balance and Account.last_n_days in account.py. Read the existing Transaction model to understand the data shape. Do NOT use the AI assistant."
+        "task": "Read README.md, then tickets/FIN-001 and FIN-002. Implement Account.balance and Account.last_n_days in account.py. Do NOT use the AI assistant."
       },
       {
         "id": 2,
         "title": "Categorization",
         "ai_enabled": true,
-        "task": "Implement categories.auto_categorize. Use the KEYWORDS map, case-insensitive substring match, and fall back to \"uncategorized\"."
+        "task": "Implement tickets/FIN-003 in categories.py. Use the KEYWORDS map, case-insensitive substring match, and fall back to \"uncategorized\"."
       },
       {
         "id": 3,
         "title": "Budgets & Reports",
         "ai_enabled": true,
-        "task": "Implement Budget.over_under and reports.monthly_summary. Both filter transactions to a given (year, month)."
+        "task": "Implement tickets/FIN-004 and FIN-005. Both filter transactions to a given (year, month)."
       },
       {
         "id": 4,
         "title": "Polish & Validation",
         "ai_enabled": true,
-        "task": "Implement reports.average_daily_spend including the ValueError on non-positive n_days."
+        "task": "Implement tickets/FIN-006 including the ValueError on non-positive n_days."
       }
     ]
   },
@@ -93,25 +121,49 @@
     "domain": "Habit Tracker",
     "files": [
       {
+        "name": "README.md",
+        "content": "# Habit Tracker\n\nWelcome to the Streaks team! Streaks is a personal habit tracker — users\ndefine habits with a weekly target and log completions per calendar date.\nThe UI shows current streak, weekly progress, and an overall dashboard.\nThe model classes exist; the streak math and weekly reporting are stubbed.\n\n## Project Structure\n\n```\nhabit.py     — Habit model (name, target_per_week, completions)\nstreaks.py   — current_streak + longest_streak (TWO STUBS)\nweekly.py    — week_of, completions_this_week, hit_target (TWO STUBS)\ntracker.py   — Tracker aggregate + overview() report (ONE STUB)\ntickets/     — feature tickets, one per stub\n```\n\n## Architecture\n\n```\n   Habit ──► streaks.current_streak / longest_streak\n     │\n     └─► weekly.completions_this_week → weekly.hit_target\n            │\n            ▼\n       Tracker.overview()  (combines streak + weekly + total)\n```\n\n## Conventions\n\n- All dates are `datetime.date` objects (no datetimes, no strings).\n- A \"week\" is the **ISO week starting Monday** (use `weekly.week_of`).\n- Completions are deduplicated: `Habit.log` already drops same-day repeats.\n\n## Tickets\n\n- **HABIT-001** — `current_streak`\n- **HABIT-002** — `longest_streak`\n- **HABIT-003** — `completions_this_week`\n- **HABIT-004** — `hit_target`\n- **HABIT-005** — `Tracker.overview`\n"
+      },
+      {
+        "name": "tickets/HABIT-001.md",
+        "content": "# HABIT-001: Implement current_streak\n\n**Status:** To Do\n**Priority:** P0\n**Component:** Streaks\n**File:** `streaks.py`\n\n## Background\n\nThe dashboard's biggest number is \"current streak\" — how many consecutive\ndays, ending today, the user has logged this habit.\n\n## Acceptance criteria\n\n- Signature: `current_streak(habit, today)`.\n- If `today` itself is **not** in `habit.completions` → streak is 0 (broken).\n- Otherwise walk backward day-by-day; stop when you hit a missing date.\n- Return the count as an int.\n\n### Example\n\nCompletions `Jun 1, 2, 3` and `today=Jun 3` → streak `3`.\nCompletions `Jun 1, 2, 3` and `today=Jun 4` → streak `0`.\n"
+      },
+      {
+        "name": "tickets/HABIT-002.md",
+        "content": "# HABIT-002: Implement longest_streak\n\n**Status:** To Do\n**Priority:** P1\n**Component:** Streaks\n**File:** `streaks.py`\n\n## Background\n\nFor the \"all-time best\" badge, return the longest consecutive run anywhere\nin the habit's completion history.\n\n## Acceptance criteria\n\n- Signature: `longest_streak(habit)`.\n- Returns an int — the length of the longest consecutive-day run.\n- Empty completions → `0`.\n\n### Example\n\nCompletions `Jun 1, 2, 3, 7, 8` → `3` (the Jun 1–3 run).\n"
+      },
+      {
+        "name": "tickets/HABIT-003.md",
+        "content": "# HABIT-003: Implement completions_this_week\n\n**Status:** To Do\n**Priority:** P1\n**Component:** Weekly\n**File:** `weekly.py`\n\n## Background\n\nDrives the \"X / target\" widget. Counts how many of the user's completions\nfall in the **same ISO week** as a given `today`.\n\n## Acceptance criteria\n\n- Signature: `completions_this_week(habit, today)`.\n- \"Same ISO week\" = Monday–Sunday, **inclusive**. Use the provided\n  `week_of(day)` helper to find the Monday.\n- Return the count as an int.\n"
+      },
+      {
+        "name": "tickets/HABIT-004.md",
+        "content": "# HABIT-004: Implement hit_target\n\n**Status:** To Do\n**Priority:** P2\n**Component:** Weekly\n**File:** `weekly.py`\n\n## Background\n\nDrives the green checkmark on each habit row.\n\n## Acceptance criteria\n\n- Signature: `hit_target(habit, today)`.\n- Returns `True` iff `completions_this_week(habit, today) >= habit.target_per_week`.\n- Returns `False` otherwise.\n"
+      },
+      {
+        "name": "tickets/HABIT-005.md",
+        "content": "# HABIT-005: Implement Tracker.overview\n\n**Status:** To Do\n**Priority:** P1\n**Component:** Tracker dashboard\n**File:** `tracker.py`\n\n## Background\n\nThe dashboard view calls one method to get everything it needs to render\neach habit row.\n\n## Acceptance criteria\n\n`tracker.overview(today)` returns a dict:\n\n```python\n{ habit_name: {\n    'streak':    int,  # current_streak(habit, today)\n    'this_week': int,  # completions_this_week(habit, today)\n    'on_target': bool, # hit_target(habit, today)\n    'total':     int,  # habit.total_completions()\n} }\n```\n\nEvery habit in `self.habits` must appear, even with empty completions.\n"
+      },
+      {
         "name": "habit.py",
         "content": "import datetime\n\n\nclass Habit:\n    def __init__(self, name, target_per_week=7):\n        self.name = name\n        self.target_per_week = target_per_week\n        self.completions = []  # list of datetime.date\n\n    def log(self, day):\n        if day not in self.completions:\n            self.completions.append(day)\n\n    def total_completions(self):\n        return len(self.completions)\n"
       },
       {
         "name": "streaks.py",
-        "content": "import datetime\n\n\ndef current_streak(habit, today):\n    # TODO STUB 1: Count consecutive days ending at 'today' where the habit was completed.\n    # Example: completions on June 1, 2, 3 and today=June 3 → streak 3.\n    # If today itself is missing, streak is 0 (broken).\n    raise NotImplementedError('streaks.current_streak')\n\n\ndef longest_streak(habit):\n    # TODO STUB 2: Find the longest run of consecutive days in habit.completions.\n    # Returns the length as an int. Empty completions → 0.\n    raise NotImplementedError('streaks.longest_streak')\n"
+        "content": "import datetime\n\n\ndef current_streak(habit, today):\n    # TODO STUB 1 (HABIT-001): Count consecutive days ending at 'today' where\n    # the habit was completed. Example: completions on June 1, 2, 3 and\n    # today=June 3 -> streak 3. If today itself is missing, streak is 0\n    # (broken).\n    raise NotImplementedError('streaks.current_streak')\n\n\ndef longest_streak(habit):\n    # TODO STUB 2 (HABIT-002): Find the longest run of consecutive days in\n    # habit.completions. Returns the length as an int. Empty completions -> 0.\n    raise NotImplementedError('streaks.longest_streak')\n"
       },
       {
         "name": "weekly.py",
-        "content": "import datetime\n\n\ndef week_of(day):\n    # ISO week starting Monday\n    monday = day - datetime.timedelta(days=day.weekday())\n    return monday\n\n\ndef completions_this_week(habit, today):\n    # TODO STUB 3: Return the number of completions whose date is in the same ISO week as 'today'\n    # (Monday-Sunday inclusive).\n    raise NotImplementedError('weekly.completions_this_week')\n\n\ndef hit_target(habit, today):\n    # TODO STUB 4: True if completions_this_week(habit, today) >= habit.target_per_week.\n    raise NotImplementedError('weekly.hit_target')\n"
+        "content": "import datetime\n\n\ndef week_of(day):\n    # ISO week starting Monday\n    monday = day - datetime.timedelta(days=day.weekday())\n    return monday\n\n\ndef completions_this_week(habit, today):\n    # TODO STUB 3 (HABIT-003): Return the number of completions whose date\n    # is in the same ISO week as 'today' (Monday-Sunday inclusive).\n    raise NotImplementedError('weekly.completions_this_week')\n\n\ndef hit_target(habit, today):\n    # TODO STUB 4 (HABIT-004): True if\n    #   completions_this_week(habit, today) >= habit.target_per_week.\n    raise NotImplementedError('weekly.hit_target')\n"
       },
       {
         "name": "tracker.py",
-        "content": "from streaks import current_streak, longest_streak\nfrom weekly import completions_this_week, hit_target\n\n\nclass Tracker:\n    def __init__(self):\n        self.habits = {}\n\n    def add_habit(self, habit):\n        self.habits[habit.name] = habit\n\n    def log(self, habit_name, day):\n        h = self.habits.get(habit_name)\n        if h is None:\n            raise KeyError(habit_name)\n        h.log(day)\n\n    def overview(self, today):\n        # TODO STUB 5: Return a dict mapping each habit name to its overview:\n        #   { 'streak': int, 'this_week': int, 'on_target': bool, 'total': int }\n        raise NotImplementedError('tracker.overview')\n"
+        "content": "from streaks import current_streak, longest_streak\nfrom weekly import completions_this_week, hit_target\n\n\nclass Tracker:\n    def __init__(self):\n        self.habits = {}\n\n    def add_habit(self, habit):\n        self.habits[habit.name] = habit\n\n    def log(self, habit_name, day):\n        h = self.habits.get(habit_name)\n        if h is None:\n            raise KeyError(habit_name)\n        h.log(day)\n\n    def overview(self, today):\n        # TODO STUB 5 (HABIT-005): Return a dict mapping each habit name to:\n        #   { 'streak': int, 'this_week': int, 'on_target': bool, 'total': int }\n        raise NotImplementedError('tracker.overview')\n"
       }
     ],
     "test_file": {
       "name": "test_solution.py",
-      "content": "import unittest\nimport datetime\nfrom habit import Habit\nfrom streaks import current_streak, longest_streak\nfrom weekly import completions_this_week, hit_target, week_of\nfrom tracker import Tracker\n\n\ndef D(y, m, d):\n    return datetime.date(y, m, d)\n\n\ndef sample_habit():\n    h = Habit('read', target_per_week=5)\n    # Logged: May 27, 28, 29, 30, 31, Jun 1 (six consecutive days)\n    for day in range(27, 32):\n        h.log(D(2024, 5, day))\n    h.log(D(2024, 6, 1))\n    return h\n\n\n# CHECKPOINT 1\nclass TestStreaks(unittest.TestCase):\n    def test_current_streak_basic(self):\n        \"\"\"6 consecutive days ending today → streak 6\"\"\"\n        h = sample_habit()\n        self.assertEqual(current_streak(h, D(2024, 6, 1)), 6)\n\n    def test_current_streak_broken(self):\n        \"\"\"If today itself is unlogged, streak is 0\"\"\"\n        h = sample_habit()\n        self.assertEqual(current_streak(h, D(2024, 6, 2)), 0)\n\n    def test_longest_streak_simple(self):\n        \"\"\"6 consecutive days → longest 6\"\"\"\n        h = sample_habit()\n        self.assertEqual(longest_streak(h), 6)\n\n    def test_longest_streak_with_gap(self):\n        \"\"\"Streak resets after a gap\"\"\"\n        h = Habit('exercise')\n        for day in [1, 2, 3, 7, 8]:\n            h.log(D(2024, 6, day))\n        self.assertEqual(longest_streak(h), 3)\n\n\n# CHECKPOINT 2\nclass TestWeekly(unittest.TestCase):\n    def test_completions_this_week_partial(self):\n        \"\"\"today=Sat Jun 1 2024 (ISO week starting Mon May 27): 6 logged days\"\"\"\n        h = sample_habit()\n        self.assertEqual(completions_this_week(h, D(2024, 6, 1)), 6)\n\n    def test_completions_this_week_isolated_week(self):\n        \"\"\"A log in a previous week is not counted\"\"\"\n        h = Habit('test')\n        h.log(D(2024, 5, 20))  # previous week\n        h.log(D(2024, 5, 28))  # current week (Tue)\n        self.assertEqual(completions_this_week(h, D(2024, 6, 1)), 1)\n\n    def test_hit_target_true(self):\n        \"\"\"5 completions, target 5 → hit\"\"\"\n        h = sample_habit()  # 6 completions in week\n        self.assertTrue(hit_target(h, D(2024, 6, 1)))\n\n    def test_hit_target_false(self):\n        \"\"\"3 completions, target 5 → miss\"\"\"\n        h = Habit('miss', target_per_week=5)\n        for day in range(28, 31):\n            h.log(D(2024, 5, day))\n        self.assertFalse(hit_target(h, D(2024, 6, 1)))\n\n\n# CHECKPOINT 3 + 4\nclass TestTrackerOverview(unittest.TestCase):\n    def test_overview_includes_all_habits(self):\n        \"\"\"overview returns one entry per habit\"\"\"\n        t = Tracker()\n        t.add_habit(Habit('read', target_per_week=5))\n        t.add_habit(Habit('exercise', target_per_week=3))\n        t.log('read', D(2024, 6, 1))\n        result = t.overview(D(2024, 6, 1))\n        self.assertEqual(set(result.keys()), {'read', 'exercise'})\n\n    def test_overview_fields_present(self):\n        \"\"\"Each overview entry has streak/this_week/on_target/total keys\"\"\"\n        t = Tracker()\n        t.add_habit(Habit('read', target_per_week=5))\n        for day in range(28, 32):\n            t.log('read', D(2024, 5, day))\n        t.log('read', D(2024, 6, 1))\n        result = t.overview(D(2024, 6, 1))\n        entry = result['read']\n        self.assertEqual(entry['streak'], 5)\n        self.assertEqual(entry['this_week'], 5)\n        self.assertTrue(entry['on_target'])\n        self.assertEqual(entry['total'], 5)\n\n\nif __name__ == '__main__':\n    unittest.main()\n"
+      "content": "import unittest\nimport datetime\nfrom habit import Habit\nfrom streaks import current_streak, longest_streak\nfrom weekly import completions_this_week, hit_target, week_of\nfrom tracker import Tracker\n\n\ndef D(y, m, d):\n    return datetime.date(y, m, d)\n\n\ndef sample_habit():\n    h = Habit('read', target_per_week=5)\n    # Logged: May 27, 28, 29, 30, 31, Jun 1 (six consecutive days)\n    for day in range(27, 32):\n        h.log(D(2024, 5, day))\n    h.log(D(2024, 6, 1))\n    return h\n\n\n# CHECKPOINT 1\nclass TestStreaks(unittest.TestCase):\n    def test_current_streak_basic(self):\n        \"\"\"6 consecutive days ending today -> streak 6\"\"\"\n        h = sample_habit()\n        self.assertEqual(current_streak(h, D(2024, 6, 1)), 6)\n\n    def test_current_streak_broken(self):\n        \"\"\"If today itself is unlogged, streak is 0\"\"\"\n        h = sample_habit()\n        self.assertEqual(current_streak(h, D(2024, 6, 2)), 0)\n\n    def test_longest_streak_simple(self):\n        \"\"\"6 consecutive days -> longest 6\"\"\"\n        h = sample_habit()\n        self.assertEqual(longest_streak(h), 6)\n\n    def test_longest_streak_with_gap(self):\n        \"\"\"Streak resets after a gap\"\"\"\n        h = Habit('exercise')\n        for day in [1, 2, 3, 7, 8]:\n            h.log(D(2024, 6, day))\n        self.assertEqual(longest_streak(h), 3)\n\n\n# CHECKPOINT 2\nclass TestWeekly(unittest.TestCase):\n    def test_completions_this_week_partial(self):\n        \"\"\"today=Sat Jun 1 2024 (ISO week starting Mon May 27): 6 logged days\"\"\"\n        h = sample_habit()\n        self.assertEqual(completions_this_week(h, D(2024, 6, 1)), 6)\n\n    def test_completions_this_week_isolated_week(self):\n        \"\"\"A log in a previous week is not counted\"\"\"\n        h = Habit('test')\n        h.log(D(2024, 5, 20))  # previous week\n        h.log(D(2024, 5, 28))  # current week (Tue)\n        self.assertEqual(completions_this_week(h, D(2024, 6, 1)), 1)\n\n    def test_hit_target_true(self):\n        \"\"\"5 completions, target 5 -> hit\"\"\"\n        h = sample_habit()  # 6 completions in week\n        self.assertTrue(hit_target(h, D(2024, 6, 1)))\n\n    def test_hit_target_false(self):\n        \"\"\"3 completions, target 5 -> miss\"\"\"\n        h = Habit('miss', target_per_week=5)\n        for day in range(28, 31):\n            h.log(D(2024, 5, day))\n        self.assertFalse(hit_target(h, D(2024, 6, 1)))\n\n\n# CHECKPOINT 3 + 4\nclass TestTrackerOverview(unittest.TestCase):\n    def test_overview_includes_all_habits(self):\n        \"\"\"overview returns one entry per habit\"\"\"\n        t = Tracker()\n        t.add_habit(Habit('read', target_per_week=5))\n        t.add_habit(Habit('exercise', target_per_week=3))\n        t.log('read', D(2024, 6, 1))\n        result = t.overview(D(2024, 6, 1))\n        self.assertEqual(set(result.keys()), {'read', 'exercise'})\n\n    def test_overview_fields_present(self):\n        \"\"\"Each overview entry has streak/this_week/on_target/total keys\"\"\"\n        t = Tracker()\n        t.add_habit(Habit('read', target_per_week=5))\n        for day in range(28, 32):\n            t.log('read', D(2024, 5, day))\n        t.log('read', D(2024, 6, 1))\n        result = t.overview(D(2024, 6, 1))\n        entry = result['read']\n        self.assertEqual(entry['streak'], 5)\n        self.assertEqual(entry['this_week'], 5)\n        self.assertTrue(entry['on_target'])\n        self.assertEqual(entry['total'], 5)\n\n\nif __name__ == '__main__':\n    unittest.main()\n"
     },
     "bugs": [],
     "stubs": [
@@ -146,25 +198,25 @@
         "id": 1,
         "title": "Streaks",
         "ai_enabled": false,
-        "task": "Implement current_streak and longest_streak in streaks.py. Think about when a streak resets. Do NOT use the AI assistant."
+        "task": "Read README.md and tickets/HABIT-001 + HABIT-002. Implement current_streak and longest_streak in streaks.py. Do NOT use the AI assistant."
       },
       {
         "id": 2,
         "title": "Weekly View",
         "ai_enabled": true,
-        "task": "Implement completions_this_week and hit_target in weekly.py. Use week_of() to determine the Monday of any given date."
+        "task": "Implement tickets/HABIT-003 and HABIT-004 in weekly.py. Use week_of() to determine the Monday of any given date."
       },
       {
         "id": 3,
         "title": "Tracker Overview",
         "ai_enabled": true,
-        "task": "Implement Tracker.overview to combine streak/weekly/total info for every habit."
+        "task": "Implement tickets/HABIT-005 to combine streak / weekly / total info for every habit."
       },
       {
         "id": 4,
         "title": "Polish",
         "ai_enabled": true,
-        "task": "Verify all tests pass. Add a defensive check in Tracker.log if the habit is missing (already raises KeyError). Run the full suite and explain how each piece fits together in the chat."
+        "task": "Verify all tests pass. Run the full suite and explain how each piece fits together in the chat."
       }
     ]
   }
